@@ -95,6 +95,11 @@ scheduled expiry sweep, no per-session byte accounting.
 <!-- BEGIN GENERATED: pr-log -->
 ### Pull requests
 
-_No pull requests recorded yet — this section is regenerated automatically by
-`.github/workflows/readme.yml`._
+_Regenerated automatically by `.github/workflows/readme.yml` — edit anything outside the markers instead._
+
+**1** open · **0** merged · **0** closed without merging · updated 2026-09-23 18:25 UTC
+
+| PR | Title | Author | Branch | State | Updated |
+| --- | --- | --- | --- | --- | --- |
+[#1](https://github.com/rizwanahmedsora9-pixel/RNS/pull/1) | Audit the AI-generated hotspot-billing drop, make it build, add APK/README/branch CI | @arena-ai-coding-agent[bot] | `arena/01a0cf69-rns` | 🟢 open | 2026-09-23
 <!-- END GENERATED: pr-log -->
