@@ -96,7 +96,8 @@ object RootShell {
         run("ip -o link show").out.mapNotNull { line ->
             val name = Regex("^[0-9]+: ([^:@]+)").find(line)?.groupValues?.get(1)?.trim()
                 ?: return@mapNotNull null
-            name to line.contains("<") && Regex("<[^>]*UP[^>]*>").containsMatchIn(line)
+            val up = Regex("<[^>]*UP[^>]*>").containsMatchIn(line)
+            name to up
         }
 
     /** The interface that currently holds the default route (the internet side). */
