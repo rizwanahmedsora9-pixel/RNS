@@ -118,10 +118,10 @@ rate limit on `/redeem`.
 
 _Regenerated automatically by `.github/workflows/readme.yml` — edit anything outside the markers instead._
 
-**1** open · **1** merged · **0** closed without merging · updated 2026-09-23 19:36 UTC
+**0** open · **2** merged · **0** closed without merging · updated 2026-09-23 19:45 UTC
 
 | PR | Title | Author | Branch | State | Updated |
 | --- | --- | --- | --- | --- | --- |
-[#2](https://github.com/rizwanahmedsora9-pixel/RNS/pull/2) | Admin UI (vouchers, user profiles), real hotspot control, foreground service, in-place updates | @arena-ai-coding-agent[bot] | `arena/01a0cfac-rns` | 🟢 open | 2026-09-23
+[#2](https://github.com/rizwanahmedsora9-pixel/RNS/pull/2) | Admin UI (vouchers, user profiles), real hotspot control, foreground service, in-place updates | @arena-ai-coding-agent[bot] | `arena/01a0cfac-rns` | 🟣 merged | 2026-09-23
 [#1](https://github.com/rizwanahmedsora9-pixel/RNS/pull/1) | Audit the AI-generated hotspot-billing drop, make it build, add APK/README/branch CI | @arena-ai-coding-agent[bot] | `arena/01a0cf69-rns` | 🟣 merged | 2026-09-23
 <!-- END GENERATED: pr-log -->
