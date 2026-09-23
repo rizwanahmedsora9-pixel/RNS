@@ -95,7 +95,7 @@ jobs:
         run: |
           set -euo pipefail
           rm -f app/src/main/assets/*.sh
-          ./gradlew --no-daemon --console=plain :app:syncShellScripts
+          ./gradlew --no-daemon --console=plain --stacktrace :app:syncShellScripts 2>&1 | tee -a gradle.log
           # The Gradle task alone must produce byte-identical copies, otherwise the
           # scripts the app ships can drift from scripts/ (they are git-ignored).
           for f in scripts/*.sh; do
@@ -164,9 +164,15 @@ jobs:
         if: failure()
         run: |
           set +e
-          echo "::error::APK build failed - see the annotations below and the job log"
-          grep -E "^(FAILURE|e: |> Task .* FAILED|Caused by:)|error:|What went wrong" gradle.log \
-            | tail -n 9 | while IFS= read -r line; do echo "::error::${line}"; done
+          echo "::error::APK build failed - diagnostics below (job log may be unreachable)"
+          echo "::error::assets dir: $(ls app/src/main/assets 2>&1 | tr '\n' ' ')"
+          if [ -s gradle.log ]; then
+            grep -E "FAILURE|What went wrong|^e: |error:|Caused by:|Could not|not found|Task .* FAILED|Exception" gradle.log \
+              | sed 's/^[[:space:]]*//' | sort -u | tail -n 8 \
+              | while IFS= read -r line; do echo "::error::${line}"; done
+          else
+            echo "::error::no gradle.log produced - the failure happened before Gradle ran"
+          fi
 
       - name: Post build result on the pull request
         if: github.event_name == 'pull_request' && always()
