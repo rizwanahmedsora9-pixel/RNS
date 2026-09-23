@@ -1,0 +1,25 @@
+# --- Gradle / Android build output ---
+.gradle/
+build/
+app/build/
+captures/
+.externalNativeBuild/
+.cxx/
+local.properties
+
+# --- IDE ---
+.idea/
+*.iml
+.DS_Store
+
+# --- Shell scripts are generated into assets at build time by :syncShellScripts.
+# scripts/ is the single source of truth; do not commit the copies. ---
+app/src/main/assets/*.sh
+
+# --- Local signing material (never commit keystores) ---
+*.jks
+*.keystore
+keystore.properties
+
+# --- CI scratch space ---
+.audit/

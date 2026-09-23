@@ -1,0 +1,183 @@
+name: APK
+
+# Builds an installable APK for every pull request and every push to main,
+# uploads it as a workflow artifact, and posts the download link back on the PR.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: read
+
+concurrency:
+  group: apk-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: '17'
+  ANDROID_PLATFORM: '34'
+  ANDROID_BUILD_TOOLS: '34.0.0'
+
+jobs:
+  shell-selftest:
+    name: Root shell layer self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run the firewall / shaper self-test
+        run: bash tools/run-script-selftest.sh
+
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: shell-selftest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and build-tools
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager --install "platforms;android-${ANDROID_PLATFORM}" "build-tools;${ANDROID_BUILD_TOOLS}" "platform-tools"
+
+      - name: Set up Gradle build cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Check shell scripts sync into assets
+        run: |
+          set -euo pipefail
+          rm -f app/src/main/assets/*.sh
+          ./gradlew --no-daemon --console=plain :app:syncShellScripts
+          # The Gradle task alone must produce byte-identical copies, otherwise the
+          # scripts the app ships can drift from scripts/ (they are git-ignored).
+          for f in scripts/*.sh; do
+            cmp "$f" "app/src/main/assets/$(basename "$f")"
+          done
+          echo "scripts synced into app/src/main/assets:"
+          ls -l app/src/main/assets
+
+      - name: Unit tests
+        run: ./gradlew --no-daemon --console=plain testDebugUnitTest
+
+      - name: Lint
+        run: ./gradlew --no-daemon --console=plain lintDebug
+
+      - name: Build debug and release APKs
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --console=plain \
+            assembleDebug assembleRelease \
+            -PappVersionCode="${GITHUB_RUN_NUMBER}" \
+            -PappVersionName="1.0.${GITHUB_RUN_NUMBER}+${GITHUB_SHA::7}"
+
+      - name: Collect APKs
+        id: collect
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          SHORT="${GITHUB_SHA::7}"
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/hotspot-billing-${SHORT}-debug.apk"
+          # The release APK is unsigned unless RELEASE_STORE_* secrets are configured.
+          shopt -s nullglob
+          for apk in app/build/outputs/apk/release/*.apk; do
+            cp "$apk" "dist/hotspot-billing-${SHORT}-release$( [ -n "${RELEASE_STORE_FILE:-}" ] && echo '' || echo '-unsigned' ).apk"
+          done
+          shopt -u nullglob
+          {
+            echo "apk_debug=dist/hotspot-billing-${SHORT}-debug.apk"
+            echo "version=1.0.${GITHUB_RUN_NUMBER}+${SHORT}"
+          } >> "$GITHUB_OUTPUT"
+          ls -lh dist
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hotspot-billing-apk-${{ github.run_number }}
+          path: dist/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-${{ github.run_number }}
+          path: |
+            app/build/reports/lint-results-debug.html
+            app/build/reports/tests/testDebugUnitTest
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Post build result on the pull request
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          APK_VERSION: ${{ steps.collect.outputs.version }}
+        with:
+          script: |
+            const marker = '<!-- apk-build-result -->';
+            const status = '${{ job.status }}' === 'success' ? '✅ built' : '❌ failed';
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              marker,
+              `### APK ${status}`,
+              '',
+              `| | |`,
+              `|---|---|`,
+              `| Commit | \`${context.sha.slice(0, 7)}\` |`,
+              `| Version | \`${process.env.APK_VERSION}\` |`,
+              `| Artifact | \`hotspot-billing-apk-${context.runNumber}\` |`,
+              `| Build log | [Actions run #${context.runNumber}](${runUrl}) |`,
+              '',
+              `Download from the **Artifacts** section at the bottom of the build log page.`,
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find((c) => (c.body || '').includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
