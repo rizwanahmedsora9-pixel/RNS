@@ -12,6 +12,12 @@ plugins {
 def releaseStoreFile = System.getenv('RELEASE_STORE_FILE') ?: project.findProperty('RELEASE_STORE_FILE')
 def releaseSigningReady = releaseStoreFile ? file(releaseStoreFile).exists() : false
 
+// Resolved eagerly and explicitly: `versionCode (x) as int` parses in Groovy as
+// `(versionCode(x)) as int`, i.e. it calls the setter with a String and then
+// casts the void return - which fails at configuration time.
+def resolvedVersionCode = Integer.parseInt((project.findProperty('appVersionCode') ?: '1').toString())
+def resolvedVersionName = (project.findProperty('appVersionName') ?: '1.0').toString()
+
 android {
     namespace 'com.hotspot.billing'
     compileSdk 34
@@ -20,28 +26,13 @@ android {
         applicationId 'com.hotspot.billing'
         minSdk 26
         targetSdk 34
-        // CI passes -PappVersionCode / -PappVersionName; local builds use these defaults.
-        versionCode (project.findProperty('appVersionCode') ?: '1') as int
-        versionName (project.findProperty('appVersionName') ?: '1.0')
-    }
-
-    signingConfigs {
-        if (releaseSigningReady) {
-            release {
-                storeFile file(releaseStoreFile)
-                storePassword System.getenv('RELEASE_STORE_PASSWORD') ?: project.findProperty('RELEASE_STORE_PASSWORD')
-                keyAlias System.getenv('RELEASE_KEY_ALIAS') ?: project.findProperty('RELEASE_KEY_ALIAS')
-                keyPassword System.getenv('RELEASE_KEY_PASSWORD') ?: project.findProperty('RELEASE_KEY_PASSWORD')
-            }
-        }
+        versionCode = resolvedVersionCode
+        versionName = resolvedVersionName
     }
 
     buildTypes {
         release {
             minifyEnabled false
-            if (releaseSigningReady) {
-                signingConfig signingConfigs.release
-            }
         }
     }
 
@@ -66,17 +57,36 @@ android {
     }
 }
 
+if (releaseSigningReady) {
+    android.signingConfigs.create('release') {
+        storeFile file(releaseStoreFile)
+        storePassword System.getenv('RELEASE_STORE_PASSWORD') ?: project.findProperty('RELEASE_STORE_PASSWORD')
+        keyAlias System.getenv('RELEASE_KEY_ALIAS') ?: project.findProperty('RELEASE_KEY_ALIAS')
+        keyPassword System.getenv('RELEASE_KEY_PASSWORD') ?: project.findProperty('RELEASE_KEY_PASSWORD')
+    }
+    android.buildTypes.getByName('release').signingConfig = android.signingConfigs.getByName('release')
+}
+
 /*
- * scripts/*.sh is the single source of truth for the root shell layer.
- * The copies under src/main/assets are generated here so the two can never drift.
+ * scripts/ is the single source of truth for the root shell layer; the copies
+ * under src/main/assets are generated here so the two can never drift. Plain
+ * file IO rather than a Copy spec - two small files, nothing to mis-configure.
  */
-tasks.register('syncShellScripts', Copy) {
+def scriptSrc = rootProject.file('scripts')
+def scriptDst = file('src/main/assets')
+def scriptNames = ['setup_network.sh', 'bandwidth_control.sh']
+
+tasks.register('syncShellScripts') {
     group = 'build'
     description = 'Copies the two root shell scripts into src/main/assets (generated, git-ignored).'
-    from(rootProject.file('scripts')) {
-        include 'setup_network.sh', 'bandwidth_control.sh'
+    doLast {
+        scriptDst.mkdirs()
+        scriptNames.each { name ->
+            new File(scriptSrc, name).withInputStream { input ->
+                new File(scriptDst, name).withOutputStream { output -> output << input }
+            }
+        }
     }
-    into(layout.projectDirectory.dir('src/main/assets'))
 }
 
 tasks.matching { it.name == 'preBuild' || (it.name.startsWith('merge') && it.name.endsWith('Assets')) }

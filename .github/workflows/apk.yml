@@ -181,9 +181,21 @@ jobs:
           APK_VERSION: ${{ steps.collect.outputs.version }}
         with:
           script: |
+            const fs = require('fs');
             const marker = '<!-- apk-build-result -->';
             const ok = '${{ job.status }}' === 'success';
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            let tail = '';
+            if (!ok) {
+              try {
+                const log = fs.readFileSync('gradle.log', 'utf8');
+                tail = log.slice(-6000);
+              } catch (e) {
+                tail = `(no gradle.log: ${e.message})`;
+              }
+            }
+
             const body = [
               marker,
               `### APK ${ok ? '✅ built' : '❌ failed'}`,
@@ -197,7 +209,7 @@ jobs:
               '',
               ok
                 ? 'Download from the **Artifacts** section at the bottom of the build log page.'
-                : 'The build did not finish; open the build log for the compiler output.',
+                : ['The build did not finish. Gradle output tail:', '', '```', tail, '```'].join('\n'),
             ].join('\n');
 
             const { data: comments } = await github.rest.issues.listComments({
