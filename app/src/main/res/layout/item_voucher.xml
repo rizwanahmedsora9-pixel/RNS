@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@color/card"
+    android:padding="12dp"
+    android:layout_marginBottom="8dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/v_code"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:fontFamily="monospace"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:textColor="@color/code"
+            android:text="XXXX-XXXX" />
+
+        <TextView
+            android:id="@+id/v_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:textColor="@color/amber"
+            android:text="UNUSED" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/v_plan"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:textSize="12sp"
+        android:textColor="@color/textDim"
+        android:text="1 Hour - 2Mbps" />
+
+    <TextView
+        android:id="@+id/v_binding"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:textSize="12sp"
+        android:fontFamily="monospace"
+        android:textColor="@color/textDim"
+        android:visibility="gone"
+        android:text="aa:bb:cc:dd:ee:ff / 10.66.0.12" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="6dp">
+
+        <Button android:id="@+id/v_copy" style="@style/RowButton" android:text="Copy" />
+        <Button android:id="@+id/v_share" style="@style/RowButton" android:text="Share" android:layout_marginStart="6dp" />
+        <Button android:id="@+id/v_expire" style="@style/RowButton" android:text="Expire" android:layout_marginStart="6dp" />
+        <Button android:id="@+id/v_delete" style="@style/RowButton" android:text="Delete" android:layout_marginStart="6dp" />
+    </LinearLayout>
+</LinearLayout>

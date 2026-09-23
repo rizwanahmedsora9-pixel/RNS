@@ -142,6 +142,12 @@ class VoucherManager(private val db: AppDatabase) {
             IpPool.release(ip)
             voucher.classId?.let { RootShell.removeBandwidthClass(ip, it) }
         }
+        voucher.boundMac?.let { mac ->
+            val now = System.currentTimeMillis()
+            db.sessionDao().getOpenByMac(mac).forEach { session ->
+                db.sessionDao().close(session.id, now, session.bytesUp, session.bytesDown)
+            }
+        }
     }
 
     /** Call periodically (e.g. WorkManager every minute) to sweep expired vouchers. */
@@ -149,6 +155,61 @@ class VoucherManager(private val db: AppDatabase) {
         ensureRestored()
         val now = System.currentTimeMillis()
         db.voucherDao().getExpired(now).forEach { expireVoucher(it) }
+    }
+
+    /**
+     * Admin action: end a voucher right now, whatever state it is in. Kicks the
+     * client off the network (rules + reservation + shaping) and closes its sessions.
+     */
+    @Synchronized
+    fun forceExpire(code: String): Boolean {
+        ensureRestored()
+        val voucher = db.voucherDao().findByCode(VoucherCodes.normalize(code)) ?: return false
+        return when (voucher.status) {
+            VoucherStatus.EXPIRED -> true
+            VoucherStatus.UNUSED -> {
+                db.voucherDao().upsert(voucher.copy(status = VoucherStatus.EXPIRED))
+                true
+            }
+            VoucherStatus.ACTIVE -> {
+                expireVoucher(voucher)
+                true
+            }
+        }
+    }
+
+    /** Admin action: remove a voucher from the database entirely. */
+    @Synchronized
+    fun deleteVoucher(code: String): Boolean {
+        ensureRestored()
+        val voucher = db.voucherDao().findByCode(VoucherCodes.normalize(code)) ?: return false
+        if (voucher.status == VoucherStatus.ACTIVE) {
+            expireVoucher(voucher)
+        }
+        db.voucherDao().delete(voucher.code)
+        return true
+    }
+
+    /**
+     * After a service restart or an interface bounce the kernel rules for
+     * ACTIVE vouchers are gone even though the DB rows are fine. Re-apply DHCP
+     * reservations, firewall authorization and shaping for every live voucher.
+     */
+    @Synchronized
+    fun reapplyAll() {
+        ensureRestored()
+        db.voucherDao().getActive().forEach { voucher ->
+            val mac = voucher.boundMac
+            val ip = voucher.assignedIp
+            if (mac != null && ip != null) {
+                RootShell.reserveIp(mac, ip)
+                RootShell.authorizeMac(mac, ip)
+                voucher.classId?.let {
+                    RootShell.addBandwidthClass(ip, it, voucher.rateKbit, voucher.ceilKbit)
+                }
+                IpPool.markUsed(ip)
+            }
+        }
     }
 
     /** Generates a batch of fresh voucher codes for a given plan. */
