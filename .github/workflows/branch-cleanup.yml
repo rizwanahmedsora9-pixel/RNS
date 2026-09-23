@@ -25,10 +25,13 @@ on:
         type: boolean
         default: false
 
+# NOTE: there is no `administration` scope for GITHUB_TOKEN, so the repo setting
+# "automatically delete head branches" can only be changed with a fine-grained PAT
+# that has Administration: write. Supply one as the REPO_ADMIN_TOKEN secret and the
+# first step below will flip it; otherwise it prints the one-click alternative.
 permissions:
   contents: write
   pull-requests: read
-  administration: write
 
 concurrency:
   group: branch-cleanup-${{ github.repository }}
@@ -42,30 +45,33 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       # GitHub's own "delete head branch on merge" does the common case; the prune
       # job below is the safety net for branches it misses.
       - name: Enable automatic head branch deletion
-        uses: actions/github-script@v7
-        continue-on-error: true
+        uses: actions/github-script@v8
         with:
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN || github.token }}
           script: |
+            const { owner, repo } = context.repo;
             try {
-              await github.rest.repos.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                delete_branch_on_merge: true,
-              });
+              await github.rest.repos.update({ owner, repo, delete_branch_on_merge: true });
               core.info('delete_branch_on_merge is enabled.');
             } catch (e) {
-              core.warning(`Could not change the repo setting (needs admin): ${e.message}`);
+              core.warning(
+                `Could not change the repo setting: ${e.message}. ` +
+                'Either add a fine-grained PAT with Administration: write as the ' +
+                'REPO_ADMIN_TOKEN secret, or tick "Automatically delete head branches" ' +
+                'under Settings > General > Pull Requests. The prune job below is the ' +
+                'safety net either way.',
+              );
             }
 
       - name: Prune remote branches
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           KEEP_BRANCHES: ${{ vars.KEEP_BRANCHES }}
           DRY_RUN: ${{ github.event.inputs.dry_run }}

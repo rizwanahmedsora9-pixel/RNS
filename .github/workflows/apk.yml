@@ -30,7 +30,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Run the firewall / shaper self-test
         run: bash tools/run-script-selftest.sh
@@ -43,27 +43,48 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Set up JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android platform and build-tools
+      # The GitHub runner images ship the Android SDK; use it rather than
+      # re-downloading a second copy of the command-line tools.
+      - name: Locate the Android SDK
         run: |
           set -euo pipefail
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager --install "platforms;android-${ANDROID_PLATFORM}" "build-tools;${ANDROID_BUILD_TOOLS}" "platform-tools"
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "SDK root: $SDK"
+          if command -v sdkmanager > /dev/null 2>&1; then
+            SM="$(command -v sdkmanager)"
+          elif [ -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SM="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          else
+            echo "::error::no sdkmanager found (looked on PATH and in $SDK/cmdline-tools/latest/bin)"
+            find "$SDK" -maxdepth 2 -type d 2>/dev/null | head -30
+            exit 1
+          fi
+          echo "SDKMANAGER_BIN=$SM" >> "$GITHUB_ENV"
+          java -version 2>&1 | head -2
+          "$SM" --version 2>&1 | head -2 || true
+          echo "installed platforms:"; ls "$SDK/platforms" 2>/dev/null || true
+
+      - name: Install the Android platform this project compiles against
+        run: |
+          set -euo pipefail
+          yes | "$SDKMANAGER_BIN" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER_BIN" --install \
+            "platforms;android-${ANDROID_PLATFORM}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}" \
+            "platform-tools"
 
       - name: Set up Gradle build cache
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
@@ -80,22 +101,25 @@ jobs:
           for f in scripts/*.sh; do
             cmp "$f" "app/src/main/assets/$(basename "$f")"
           done
-          echo "scripts synced into app/src/main/assets:"
           ls -l app/src/main/assets
 
       - name: Unit tests
-        run: ./gradlew --no-daemon --console=plain testDebugUnitTest
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --console=plain --stacktrace testDebugUnitTest 2>&1 | tee -a gradle.log
 
       - name: Lint
-        run: ./gradlew --no-daemon --console=plain lintDebug
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --console=plain lintDebug 2>&1 | tee -a gradle.log
 
       - name: Build debug and release APKs
         run: |
           set -euo pipefail
-          ./gradlew --no-daemon --console=plain \
+          ./gradlew --no-daemon --console=plain --stacktrace \
             assembleDebug assembleRelease \
             -PappVersionCode="${GITHUB_RUN_NUMBER}" \
-            -PappVersionName="1.0.${GITHUB_RUN_NUMBER}+${GITHUB_SHA::7}"
+            -PappVersionName="1.0.${GITHUB_RUN_NUMBER}+${GITHUB_SHA::7}" 2>&1 | tee -a gradle.log
 
       - name: Collect APKs
         id: collect
@@ -107,17 +131,16 @@ jobs:
           # The release APK is unsigned unless RELEASE_STORE_* secrets are configured.
           shopt -s nullglob
           for apk in app/build/outputs/apk/release/*.apk; do
-            cp "$apk" "dist/hotspot-billing-${SHORT}-release$( [ -n "${RELEASE_STORE_FILE:-}" ] && echo '' || echo '-unsigned' ).apk"
+            cp "$apk" "dist/hotspot-billing-${SHORT}-release-unsigned.apk"
           done
           shopt -u nullglob
           {
-            echo "apk_debug=dist/hotspot-billing-${SHORT}-debug.apk"
             echo "version=1.0.${GITHUB_RUN_NUMBER}+${SHORT}"
           } >> "$GITHUB_OUTPUT"
           ls -lh dist
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: hotspot-billing-apk-${{ github.run_number }}
           path: dist/*.apk
@@ -126,7 +149,7 @@ jobs:
 
       - name: Upload reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: reports-${{ github.run_number }}
           path: |
@@ -135,28 +158,40 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+      # Runner log storage is not always reachable from restricted networks, so
+      # mirror the interesting failure lines into the run annotations as well.
+      - name: Surface build failures as annotations
+        if: failure()
+        run: |
+          set +e
+          echo "::error::APK build failed - see the annotations below and the job log"
+          grep -E "^(FAILURE|e: |> Task .* FAILED|Caused by:)|error:|What went wrong" gradle.log \
+            | tail -n 9 | while IFS= read -r line; do echo "::error::${line}"; done
+
       - name: Post build result on the pull request
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v8
         env:
           APK_VERSION: ${{ steps.collect.outputs.version }}
         with:
           script: |
             const marker = '<!-- apk-build-result -->';
-            const status = '${{ job.status }}' === 'success' ? '✅ built' : '❌ failed';
+            const ok = '${{ job.status }}' === 'success';
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const body = [
               marker,
-              `### APK ${status}`,
+              `### APK ${ok ? '✅ built' : '❌ failed'}`,
               '',
-              `| | |`,
-              `|---|---|`,
+              '| | |',
+              '|---|---|',
               `| Commit | \`${context.sha.slice(0, 7)}\` |`,
-              `| Version | \`${process.env.APK_VERSION}\` |`,
+              `| Version | \`${process.env.APK_VERSION || 'n/a'}\` |`,
               `| Artifact | \`hotspot-billing-apk-${context.runNumber}\` |`,
               `| Build log | [Actions run #${context.runNumber}](${runUrl}) |`,
               '',
-              `Download from the **Artifacts** section at the bottom of the build log page.`,
+              ok
+                ? 'Download from the **Artifacts** section at the bottom of the build log page.'
+                : 'The build did not finish; open the build log for the compiler output.',
             ].join('\n');
 
             const { data: comments } = await github.rest.issues.listComments({
@@ -166,18 +201,9 @@ jobs:
               per_page: 100,
             });
             const existing = comments.find((c) => (c.body || '').includes(marker));
+            const payload = { owner: context.repo.owner, repo: context.repo.repo, body };
             if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body,
-              });
+              await github.rest.issues.updateComment({ ...payload, comment_id: existing.id });
             } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body,
-              });
+              await github.rest.issues.createComment({ ...payload, issue_number: context.issue.number });
             }

@@ -83,6 +83,12 @@ address is also accepted so it does not go dark mid-switch.
 branches that still have an **open** PR — re-run it with `include_open_pr_branches: true` to
 force, or `dry_run: true` to preview.
 
+Optional: add a `KEEP_BRANCHES` repository variable (comma-separated branch names) to spare
+extra branches from the sweep, and a `REPO_ADMIN_TOKEN` secret (fine-grained PAT with
+*Administration: write*) so the workflow can also flip GitHub's own *Automatically delete
+head branches* setting — without it, tick that box once under Settings → General → Pull
+Requests, or just let the prune job do the work.
+
 ## Status
 
 Working: voucher redemption, single-device binding, static IP assignment, per-plan shaping
