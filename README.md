@@ -103,7 +103,7 @@ scheduled expiry sweep, no per-session byte accounting.
 
 _Regenerated automatically by `.github/workflows/readme.yml` — edit anything outside the markers instead._
 
-**1** open · **0** merged · **0** closed without merging · updated 2026-09-23 18:38 UTC
+**1** open · **0** merged · **0** closed without merging · updated 2026-09-23 18:46 UTC
 
 | PR | Title | Author | Branch | State | Updated |
 | --- | --- | --- | --- | --- | --- |
