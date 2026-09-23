@@ -33,7 +33,7 @@ class VoucherManager(private val db: AppDatabase) {
         if (restored) return
         var highest = CLASS_ID_START
         for (voucher in db.voucherDao().getActive()) {
-            voucher.assignedIp?.let { IpPool.markUsed(it) }
+            voucher.assignedIp?.let { if (IpPool.inStaticPool(it)) IpPool.markUsed(it) }
             voucher.classId?.let { if (it > highest) highest = it }
         }
         classIdCounter.set(highest)
@@ -46,7 +46,7 @@ class VoucherManager(private val db: AppDatabase) {
      * the client's source IP on the LAN (ARP table, falling back to dnsmasq leases).
      */
     @Synchronized
-    fun redeem(code: String, requestingMac: String): RedeemResult {
+    fun redeem(code: String, requestingMac: String, currentIp: String? = null): RedeemResult {
         ensureRestored()
 
         val voucher = db.voucherDao().findByCode(VoucherCodes.normalize(code))
@@ -55,7 +55,7 @@ class VoucherManager(private val db: AppDatabase) {
         val now = System.currentTimeMillis()
 
         return when (voucher.status) {
-            VoucherStatus.UNUSED -> activateFresh(voucher, requestingMac, now)
+            VoucherStatus.UNUSED -> activateFresh(voucher, requestingMac, now, currentIp)
 
             VoucherStatus.ACTIVE -> {
                 val boundMac = voucher.boundMac
@@ -85,15 +85,21 @@ class VoucherManager(private val db: AppDatabase) {
 
                     // Same device re-submitting (reconnect, or the phone/hotspot was
                     // restarted and the kernel rules are gone): re-apply them instead
-                    // of just reporting success.
+                    // of just reporting success. Pass the address it holds right now
+                    // so it is not blackholed until DHCP hands it the reserved one.
                     else -> {
-                        RootShell.authorizeMac(boundMac, ip)
-                        voucher.classId?.let {
-                            RootShell.addBandwidthClass(ip, it, voucher.rateKbit, voucher.ceilKbit)
-                        }
+                        applyAccess(
+                            boundMac, ip, currentIp, voucher.classId,
+                            voucher.rateKbit, voucher.ceilKbit
+                        )
                         IpPool.markUsed(ip)
                         db.sessionDao().insert(
-                            UserSession(mac = boundMac, ip = ip, voucherCode = voucher.code, connectedAt = now)
+                            UserSession(
+                                mac = boundMac,
+                                ip = currentIp?.takeIf { it.isNotBlank() } ?: ip,
+                                voucherCode = voucher.code,
+                                connectedAt = now
+                            )
                         )
                         RedeemResult.Success(ip, expiresAt)
                     }
@@ -104,7 +110,12 @@ class VoucherManager(private val db: AppDatabase) {
         }
     }
 
-    private fun activateFresh(voucher: Voucher, mac: String, now: Long): RedeemResult {
+    private fun activateFresh(
+        voucher: Voucher,
+        mac: String,
+        now: Long,
+        currentIp: String?
+    ): RedeemResult {
         val ip = IpPool.allocate() ?: return RedeemResult.PoolExhausted
         val expiresAt = now + voucher.durationMinutes * 60_000L
         val classId = classIdCounter.incrementAndGet()
@@ -119,17 +130,41 @@ class VoucherManager(private val db: AppDatabase) {
         )
         db.voucherDao().upsert(updated)
 
-        // Bind MAC<->IP at the firewall level (only this MAC+IP pair can pass NAT),
-        // reserve the same IP in DHCP so the client actually gets it, then cap it.
-        RootShell.reserveIp(mac, ip)
-        RootShell.authorizeMac(mac, ip)
-        RootShell.addBandwidthClass(ip, classId, voucher.rateKbit, voucher.ceilKbit)
+        applyAccess(mac, ip, currentIp, classId, voucher.rateKbit, voucher.ceilKbit)
 
         db.sessionDao().insert(
-            UserSession(mac = mac, ip = ip, voucherCode = voucher.code, connectedAt = now)
+            UserSession(
+                mac = mac,
+                ip = currentIp?.takeIf { it.isNotBlank() } ?: ip,
+                voucherCode = voucher.code,
+                connectedAt = now
+            )
         )
 
         return RedeemResult.Success(ip, expiresAt)
+    }
+
+    /**
+     * Firewall match is the MAC (the client is often still on a dynamic lease).
+     * The reserved IP is pushed via DHCP when we own the server, and both
+     * addresses are shaped so the cap applies before the lease migrates.
+     */
+    private fun applyAccess(
+        mac: String,
+        reservedIp: String,
+        currentIp: String?,
+        classId: Int?,
+        rateKbit: Int,
+        ceilKbit: Int
+    ) {
+        RootShell.reserveIp(mac, reservedIp)
+        RootShell.authorizeMac(mac, reservedIp, currentIp)
+        if (classId == null) return
+        RootShell.addBandwidthClass(reservedIp, classId, rateKbit, ceilKbit)
+        val extra = currentIp?.takeIf { it.isNotBlank() && it != reservedIp }
+        if (extra != null && classId <= CLASS_ID_TRANSITIONAL_MAX) {
+            RootShell.addBandwidthClass(extra, classId + CLASS_ID_TRANSITIONAL, rateKbit, ceilKbit)
+        }
     }
 
     private fun expireVoucher(voucher: Voucher) {
@@ -140,7 +175,12 @@ class VoucherManager(private val db: AppDatabase) {
         }
         voucher.assignedIp?.let { ip ->
             IpPool.release(ip)
-            voucher.classId?.let { RootShell.removeBandwidthClass(ip, it) }
+            voucher.classId?.let { classId ->
+                RootShell.removeBandwidthClass(ip, classId)
+                if (classId <= CLASS_ID_TRANSITIONAL_MAX) {
+                    RootShell.removeBandwidthByClass(classId + CLASS_ID_TRANSITIONAL)
+                }
+            }
         }
         voucher.boundMac?.let { mac ->
             val now = System.currentTimeMillis()
@@ -198,17 +238,20 @@ class VoucherManager(private val db: AppDatabase) {
     @Synchronized
     fun reapplyAll() {
         ensureRestored()
+        val online = RootShell.connectedClients(null)
         db.voucherDao().getActive().forEach { voucher ->
-            val mac = voucher.boundMac
-            val ip = voucher.assignedIp
-            if (mac != null && ip != null) {
-                RootShell.reserveIp(mac, ip)
-                RootShell.authorizeMac(mac, ip)
-                voucher.classId?.let {
-                    RootShell.addBandwidthClass(ip, it, voucher.rateKbit, voucher.ceilKbit)
-                }
-                IpPool.markUsed(ip)
+            val mac = voucher.boundMac ?: return@forEach
+            var ip = voucher.assignedIp
+            // A static from a previous subnet (10.66.0.x after we adopted
+            // 192.168.43.0/24) matches nobody. Hand out a new one in-subnet.
+            if (ip == null || !IpPool.inStaticPool(ip)) {
+                ip?.let { IpPool.release(it) }
+                ip = IpPool.allocate() ?: return@forEach
+                db.voucherDao().upsert(voucher.copy(assignedIp = ip))
             }
+            val current = online.firstOrNull { it.mac == mac.lowercase() }?.ip
+            applyAccess(mac, ip, current, voucher.classId, voucher.rateKbit, voucher.ceilKbit)
+            IpPool.markUsed(ip)
         }
     }
 
@@ -247,5 +290,8 @@ class VoucherManager(private val db: AppDatabase) {
     private companion object {
         const val CLASS_ID_START = 100
         const val CODE_RETRY_LIMIT = 10
+        /** Offset for the cap on the address the client still holds. Stays inside tc's 16-bit class id. */
+        const val CLASS_ID_TRANSITIONAL = 20_000
+        const val CLASS_ID_TRANSITIONAL_MAX = 45_000
     }
 }

@@ -47,4 +47,34 @@ class LeaseParserTest {
     fun `all-zero mac is rejected`() {
         assertTrue(LeaseParser.parse(listOf("1697000000 00:00:00:00:00:00 10.66.0.12 host x")).isEmpty())
     }
+
+    @Test
+    fun `arp rows on the hotspot interface are clients, incomplete ones are not`() {
+        val rows = LeaseParser.fromArp(
+            listOf(
+                "IP address HW type Flags HW address Mask Device",
+                "192.168.43.50 0x1 0x2 aa:bb:cc:dd:ee:ff * ap0",
+                "192.168.43.51 0x1 0x0 11:22:33:44:55:66 * ap0",
+                "10.0.0.5 0x1 0x2 aa:aa:aa:aa:aa:aa * wlan0"
+            ),
+            lanIf = "ap0"
+        )
+        assertEquals(1, rows.size)
+        assertEquals("aa:bb:cc:dd:ee:ff", rows[0].mac)
+        assertEquals("192.168.43.50", rows[0].ip)
+    }
+
+    @Test
+    fun `merge keeps the lease hostname and adds arp-only devices`() {
+        val merged = LeaseParser.merge(
+            listOf(LeaseParser.Lease("aa:bb:cc:dd:ee:ff", "192.168.43.50", "phone")),
+            listOf(
+                LeaseParser.Lease("aa:bb:cc:dd:ee:ff", "192.168.43.50", ""),
+                LeaseParser.Lease("11:22:33:44:55:66", "192.168.43.51", "")
+            )
+        )
+        assertEquals(2, merged.size)
+        assertEquals("phone", merged[0].hostname)
+        assertEquals("11:22:33:44:55:66", merged[1].mac)
+    }
 }

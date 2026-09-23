@@ -15,7 +15,8 @@ import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import com.hotspot.billing.db.AppDatabase
 import com.hotspot.billing.db.DeviceProfile
-import com.hotspot.billing.net.LeaseParser
+import com.hotspot.billing.net.LanPlan
+import com.hotspot.billing.net.IpPool
 import com.hotspot.billing.net.SoftApController
 import com.hotspot.billing.net.VoucherManager
 import com.hotspot.billing.portal.CaptivePortalServer
@@ -52,6 +53,8 @@ class HotspotService : Service() {
         @Volatile var wanIf: String? = null
         @Volatile var portalRunning = false
         @Volatile var onlineClients = 0
+        @Volatile var gatewayIp: String? = null
+        @Volatile var dhcpOwner: String? = null
         @Volatile var message = ""
 
         fun reset() {
@@ -61,6 +64,8 @@ class HotspotService : Service() {
             wanIf = null
             portalRunning = false
             onlineClients = 0
+            gatewayIp = null
+            dhcpOwner = null
             message = ""
         }
     }
@@ -79,6 +84,7 @@ class HotspotService : Service() {
     private lateinit var voucherManager: VoucherManager
     private lateinit var prefs: SharedPreferences
     private var portal: CaptivePortalServer? = null
+    private var portalGateway: String? = null
 
     private val logBuffer = ArrayDeque<String>()
     private val logLock = Any()
@@ -192,14 +198,28 @@ class HotspotService : Service() {
             return true
         }
 
-        // The OS tethering service occasionally reconfigures the interface or a
-        // killed dnsmasq stays dead - detect and re-apply (the setup script is idempotent).
-        val addrOk = RootShell.lanAddresses(lan).any { it.startsWith(LAN_IP) }
-        val dnsmasqOk = RootShell.isDnsmasqRunning()
-        if (!addrOk || !dnsmasqOk) {
-            log("gateway state drifted (address ok=$addrOk, dnsmasq ok=$dnsmasqOk) - reapplying")
+        // Do NOT treat "address is not 10.66.0.1" as drift. Forcing that address
+        // back every few seconds is what left clients looping on "Obtaining IP".
+        // Adopt whatever is on the interface, and let keepalive heal DHCP
+        // without flushing it.
+        val plan = RootShell.readLanPlan()
+        val addrs = RootShell.lanAddresses(lan)
+        val gateway = plan?.gateway
+        val addrOk = gateway != null && addrs.any { it.substringBefore('/') == gateway }
+        if (!addrOk) {
+            log(
+                "hotspot address is ${addrs.joinToString().ifBlank { "missing" }} " +
+                    "(expected ${gateway ?: "unset"}) - adopting it"
+            )
             if (!configureGateway(lan)) return false
             return true
+        }
+
+        val keep = RootShell.keepaliveNetwork()
+        keep.out.forEach { if (it.isNotBlank()) log(it) }
+        RootShell.readLanPlan()?.let { refreshed ->
+            state.gatewayIp = refreshed.gateway
+            state.dhcpOwner = refreshed.dhcpOwner
         }
 
         voucherManager.sweepExpired()
@@ -240,34 +260,58 @@ class HotspotService : Service() {
             return@withContext false
         }
 
+        val plan = RootShell.readLanPlan() ?: LanPlan.DEFAULT
+        state.gatewayIp = plan.gateway
+        state.dhcpOwner = plan.dhcpOwner
+        IpPool.configure(plan)
+
         val shaper = RootShell.initBandwidth()
         if (!shaper.isSuccess) {
             log("shaper init warning: ${shaper.err.firstOrNull()?.trim() ?: "unknown"}")
         }
 
         voucherManager.reapplyAll()
+        ensurePortal(plan.gateway)
 
+        state.phase = Phase.RUNNING
+        state.message = runningMessage(lanIf, plan)
+        log("gateway running on $lanIf (WAN ${state.wanIf ?: "unknown"}, ${plan.gateway}, dhcp ${plan.dhcpOwner})")
+        updateNotification()
+        true
+    }
+
+    private fun ensurePortal(gateway: String) {
+        if (portal != null && portalGateway != gateway) {
+            try { portal?.stop() } catch (e: Exception) { /* rebound onto the new gateway */ }
+            portal = null
+        }
         if (portal == null) {
-            portal = CaptivePortalServer(voucherManager)
+            portal = CaptivePortalServer(voucherManager, gateway) { log(it) }
             try {
                 portal?.start()
             } catch (e: Exception) {
                 log("captive portal failed to start: ${e.message}")
             }
+            portalGateway = gateway
         }
         state.portalRunning = portal?.isAlive ?: false
+    }
 
-        state.phase = Phase.RUNNING
-        state.message = "Running on $lanIf - portal http://$LAN_IP:8080"
-        log("gateway running on $lanIf (WAN ${state.wanIf ?: "unknown"})")
-        updateNotification()
-        true
+    private fun runningMessage(lanIf: String, plan: LanPlan): String {
+        val dhcp = when (plan.dhcpOwner) {
+            "android" -> "phone DHCP"
+            "failed" -> "DHCP DOWN"
+            else -> "app DHCP"
+        }
+        return "Running on $lanIf · http://${plan.gateway}/ · $dhcp. " +
+            "Stuck on Obtaining IP? Forget the Wi-Fi and rejoin."
     }
 
     private suspend fun teardown() = withContext(Dispatchers.IO) {
         log("stopping gateway")
         try { portal?.stop() } catch (e: Exception) { /* already stopped */ }
         portal = null
+        portalGateway = null
         state.portalRunning = false
         try { RootShell.stopBandwidth() } catch (e: Exception) { /* nothing to stop */ }
         try { RootShell.stopNetwork() } catch (e: Exception) { /* nothing to stop */ }
@@ -316,7 +360,7 @@ class HotspotService : Service() {
 
     /** Client count + auto-recording of every device seen on the LAN. */
     private fun refreshStats() {
-        val leases = LeaseParser.parse(RootShell.readLeases())
+        val leases = RootShell.connectedClients(state.lanIf)
         state.onlineClients = leases.size
         val dao = db.deviceProfileDao()
         val now = System.currentTimeMillis()
@@ -325,7 +369,8 @@ class HotspotService : Service() {
             if (existing == null) {
                 dao.upsert(DeviceProfile(mac = lease.mac, hostname = lease.hostname))
             } else if (existing.hostname != lease.hostname || now - existing.lastSeen > DEVICE_SEEN_UPDATE_MS) {
-                dao.upsert(existing.copy(hostname = lease.hostname, lastSeen = now))
+                val hostname = lease.hostname.ifBlank { existing.hostname }
+                dao.upsert(existing.copy(hostname = hostname, lastSeen = now))
             }
         }
     }
@@ -397,7 +442,6 @@ class HotspotService : Service() {
         const val DEFAULT_PASS = "hotspot123"
 
         private const val SCRIPT_DIR = "/data/local/tmp"
-        private const val LAN_IP = CaptivePortalServer.GATEWAY_IP
         private const val MONITOR_INTERVAL_MS = 8_000L
         private const val POLL_INTERVAL_MS = 2_000L
         private const val MAX_LOG_LINES = 400

@@ -71,6 +71,17 @@ op, rest = argv[0], argv[1:]
 db = load()
 chains = db.setdefault(table, {})
 
+if op == "-N":
+    chains.setdefault(rest[0], [])
+    save(db); sys.exit(0)
+
+if op == "-X":
+    name = rest[0]
+    if chains.get(name):
+        sys.exit(1)
+    chains.pop(name, None)
+    save(db); sys.exit(0)
+
 if op == "-F":
     if rest:
         chains[rest[0]] = []
@@ -125,7 +136,11 @@ case "$*" in
   "route show default") echo "default via 192.168.1.1 dev ccmni0 metric 1" ;;
   "-o link show up")    printf '1: lo: <LOOPBACK,UP> mtu 65536\n3: ccmni0: <NOARP,UP,LOWER_UP> mtu 1500\n10: ap0: <BROADCAST,MULTICAST,UP> mtu 1500\n' ;;
   "link show ap0")      echo "10: ap0: <BROADCAST,MULTICAST,UP> mtu 1500" ;;
-  "-o -4 addr show dev ap0") echo "10: ap0    inet 192.168.43.1/24 brd 192.168.43.255 scope global ap0" ;;
+  "-o -4 addr show dev ap0")
+        # Empty by default so start() assigns 10.66.0.1. The adoption scenario
+        # exports STUB_LAN_ADDR with a full `ip -o -4 addr` line.
+        if [ -n "${STUB_LAN_ADDR:-}" ]; then printf '%s\n' "$STUB_LAN_ADDR"; fi
+        ;;
 esac
 exit 0
 EOF
@@ -217,28 +232,39 @@ done
 section "setup_network.sh start"
 $SETUP start > "$WORK/out.start" 2>&1 || { fail "start exited non-zero"; cat "$WORK/out.start"; }
 check "WAN pinned via hotspot.env, no route probe needed" 0 "^ip route show default"
-check "default-deny FORWARD rule present exactly once" 1 "iptables -t filter -I FORWARD 1 -i ap0 -j DROP"
+check "forward jump installed once" 1 "iptables -t filter -I FORWARD 1 -j HS_FWD"
+check "default-deny lives in HS_FWD exactly once" 1 "iptables -t filter -A HS_FWD -i ap0 -j DROP"
 check "NO blanket LAN->WAN accept (the old bypass)" 0 "iptables .*-i ap0 -o ccmni0 -j ACCEPT"
 check "MASQUERADE scoped to the LAN subnet" 1 "iptables -t nat -I POSTROUTING 1 -o ccmni0 -s 10.66.0.0/24 -j MASQUERADE"
-check "return traffic allowed" 1 "iptables -t filter -I FORWARD 1 -o ap0 -d 10.66.0.0/24 -m state --state RELATED,ESTABLISHED -j ACCEPT"
-check "port 80 DNAT to the portal" 1 "iptables -t nat -I PREROUTING 1 -i ap0 -p tcp --dport 80 -j DNAT"
+check "return traffic allowed" 1 "iptables -t filter -A HS_FWD -o ap0 -d 10.66.0.0/24 -m state --state RELATED,ESTABLISHED -j ACCEPT"
+check "port 80 redirected to the local portal" 1 "iptables -t nat -A HS_NAT -i ap0 -p tcp --dport 80 -j REDIRECT --to-ports 8080"
+check "port 80 is NOT DNATed to a hardcoded :8080" 0 "iptables -t nat -[AI] .*dport 80 -j DNAT"
 check "port 443 is NOT DNATed to plaintext" 0 "dport 443 -j DNAT"
-check "unauthorized HTTPS is reset, not silently dropped" 1 "iptables -t filter -I FORWARD 1 -i ap0 -p tcp --dport 443 -j REJECT --reject-with tcp-reset"
+check "unauthorized HTTPS is reset, not silently dropped" 1 "iptables -t filter -A HS_FWD -i ap0 -p tcp --dport 443 -j REJECT --reject-with tcp-reset"
+check "portal port accepted on INPUT" 1 "iptables -t filter -A HS_IN -i ap0 -p tcp --dport 8080 -j ACCEPT"
+check "DHCP accepted on INPUT" 1 "iptables -t filter -A HS_IN -i ap0 -p udp --dport 67 -j ACCEPT"
 check "IPv6 forward bypass closed" 1 "^ip6tables -I FORWARD 1 -i ap0 -j DROP"
+check "fallback address assigned when the AP has none" 1 "ip addr add 10.66.0.1/24 dev ap0"
 check "dnsmasq started" 1 "^dnsmasq "
 check "dnsmasq has an upstream resolver" 1 "dnsmasq .*--no-resolv .*--server=8.8.8.8"
 check "dnsmasq daemonises (no --no-daemon)" 0 "dnsmasq .*--no-daemon"
-check "dnsmasq serves DHCP reservations" 1 "dnsmasq .*--dhcp-hostsdir="
+check "dnsmasq serves DHCP reservations via hostsfile" 1 "dnsmasq .*--dhcp-hostsfile="
+check "dnsmasq does not use dhcp-hostsdir (absent on Android 2.51)" 0 "dhcp-hostsdir"
+check "DHCP offers are broadcast (unicast offers never reach MediaTek clients)" 1 "dnsmasq .*--dhcp-broadcast"
 check "dnsmasq lease is short so statics take effect" 1 "dhcp-range=10.66.0.10,10.66.0.250,10m"
-check "no global iptables flush" 0 "iptables .* -F($| )"
+check "no global iptables flush" 0 "iptables( -t [^ ]+)? -F$"
+if grep -q '^LAN_IP=10.66.0.1$' "$STATE/hotspot.runtime" && grep -q '^DHCP_OWNER=ours$' "$STATE/hotspot.runtime"; then
+    pass "runtime file records the gateway and DHCP owner"
+else
+    fail "runtime file missing gateway/owner: $(cat "$STATE/hotspot.runtime" 2>/dev/null)"
+fi
 
 section "authorize is idempotent"
 $SETUP authorize AA:BB:CC:DD:EE:FF 10.66.0.10 10.66.0.137 >/dev/null 2>&1
 $SETUP authorize AA:BB:CC:DD:EE:FF 10.66.0.10 10.66.0.137 >/dev/null 2>&1
 $SETUP authorize AA:BB:CC:DD:EE:FF 10.66.0.10 10.66.0.137 >/dev/null 2>&1
-check "one ACCEPT for the reserved IP after 3 calls" 1 "FORWARD 1 -i ap0 -m mac --mac-source aa:bb:cc:dd:ee:ff -s 10.66.0.10 -j ACCEPT"
-check "one transitional ACCEPT for the old lease" 1 "FORWARD 1 -i ap0 -m mac --mac-source aa:bb:cc:dd:ee:ff -s 10.66.0.137 -j ACCEPT"
-check "one portal RETURN for the MAC" 1 "PREROUTING 1 -i ap0 -m mac --mac-source aa:bb:cc:dd:ee:ff -j RETURN"
+check "one MAC ACCEPT after 3 calls (not tied to the reserved IP)" 1 "HS_FWD 1 -i ap0 -m mac --mac-source aa:bb:cc:dd:ee:ff -j ACCEPT"
+check "portal exemption is by MAC, once" 1 "HS_NAT 1 -i ap0 -m mac --mac-source aa:bb:cc:dd:ee:ff -j RETURN"
 if [ "$(wc -l < "$STATE/authorized_macs.txt")" = "1" ]; then
     pass "authorized_macs.txt has no duplicate lines"
 else
@@ -249,34 +275,37 @@ section "ordering: ACCEPTs sit above the deny"
 python3 - "$STUB_RULES" <<'PY'
 import json, sys
 db = json.load(open(sys.argv[1]))
-fwd = [" ".join(r) for r in db["filter"]["FORWARD"]]
+fwd = [" ".join(r) for r in db["filter"]["HS_FWD"]]
 deny = next(i for i, r in enumerate(fwd) if r == "-i ap0 -j DROP")
-accepts = [i for i, r in enumerate(fwd) if r.startswith("-i ap0 -m mac")]
-print("  FORWARD chain:", *fwd, sep="\n    ")
+accepts = [i for i, r in enumerate(fwd) if r.startswith("-i ap0 -m mac") and r.endswith("-j ACCEPT")]
+print("  HS_FWD chain:", *fwd, sep="\n    ")
 assert accepts, "no per-client ACCEPT rules"
 assert max(accepts) < deny, "an ACCEPT sits below the DROP rule"
 reset = next(i for i, r in enumerate(fwd) if "--dport 443" in r and r.endswith("-j REJECT --reject-with tcp-reset"))
 assert max(accepts) < reset < deny, "the 443 reset must sit between the client ACCEPTs and the deny"
+# A rule that also required the reserved source IP would miss the lease the
+# client still holds, and the MAC RETURN would already have skipped the portal.
+assert not any("-s 10.66.0.10" in r and r.endswith("-j ACCEPT") for r in fwd)
 PY
 [ $? -eq 0 ] && pass "every client ACCEPT precedes the default-deny DROP" || fail "rule ordering is wrong"
 
 nat_order=$(python3 - "$STUB_RULES" <<'PY'
 import json, sys
 db = json.load(open(sys.argv[1]))
-pre = [" ".join(r) for r in db["nat"]["PREROUTING"]]
+pre = [" ".join(r) for r in db["nat"]["HS_NAT"]]
 ret = next(i for i, r in enumerate(pre) if r.endswith("-j RETURN"))
-dnat = next(i for i, r in enumerate(pre) if "DNAT" in r)
-print("ok" if ret < dnat else "bad")
+redir = next(i for i, r in enumerate(pre) if "REDIRECT" in r and "--dport 80" in r)
+print("ok" if ret < redir else "bad")
 PY
 )
-[ "$nat_order" = "ok" ] && pass "portal RETURN precedes the DNAT rule" || fail "authorized clients would still be redirected"
+[ "$nat_order" = "ok" ] && pass "portal RETURN precedes the port-80 redirect" || fail "authorized clients would still be redirected"
 
 section "reserve / unreserve"
 $SETUP reserve AA:BB:CC:DD:EE:FF 10.66.0.10 > "$WORK/out.reserve" 2>&1
-if grep -q "dhcp-host=aa:bb:cc:dd:ee:ff,10.66.0.10" "$STATE/dhcp_hosts.d/aa-bb-cc-dd-ee-ff" 2>/dev/null; then
+if grep -q '^aa:bb:cc:dd:ee:ff,10.66.0.10$' "$STATE/dhcp_hosts" 2>/dev/null; then
     pass "DHCP reservation written (client actually gets the assigned IP)"
 else
-    fail "no dhcp-host reservation file"
+    fail "no dhcp-host reservation in $STATE/dhcp_hosts"
 fi
 if grep -q "reloaded" "$WORK/out.reserve" 2>/dev/null; then pass "dnsmasq told to reload reservations"; else fail "reserve did not reload dnsmasq"; fi
 
@@ -305,6 +334,22 @@ PY
 [ "$remaining" = "0" ] && pass "all gateway rules removed" || fail "$remaining rules still reference ap0"
 check "shaper torn down by stop" 1 "^tc qdisc del dev ap0 root"
 
+section "adopts Android's hotspot address instead of replacing it"
+: > "$LOG"
+export STUB_LAN_ADDR="10: ap0    inet 192.168.43.1/24 brd 192.168.43.255 scope global ap0"
+$SETUP start > "$WORK/out.adopt" 2>&1 || { fail "adopt start exited non-zero"; cat "$WORK/out.adopt"; }
+check "does not flush a working hotspot address" 0 "ip addr flush"
+check "does not overwrite it with 10.66.0.1" 0 "ip addr add 10.66.0.1/24"
+check "MASQUERADE follows the adopted subnet" 1 "iptables -t nat -I POSTROUTING 1 -o ccmni0 -s 192.168.43.0/24 -j MASQUERADE"
+check "DHCP range follows the adopted subnet" 1 "dhcp-range=192.168.43.10,192.168.43.250,10m"
+if grep -q '^LAN_IP=192.168.43.1$' "$STATE/hotspot.runtime"; then
+    pass "runtime gateway is the address Android already assigned"
+else
+    fail "runtime did not adopt 192.168.43.1: $(cat "$STATE/hotspot.runtime" 2>/dev/null)"
+fi
+$SETUP stop >/dev/null 2>&1
+unset STUB_LAN_ADDR
+
 section "bandwidth_control.sh"
 $SHAPER init >/dev/null 2>&1
 $SHAPER add 10.66.0.10 101 2000 3000 >/dev/null 2>&1
@@ -331,6 +376,17 @@ assert not [f for f in filters if "10.66.0.11" not in f and "10.66.0.10" not in 
 PY
 [ $? -eq 0 ] && pass "tc tree rebuilt cleanly: no duplicate or dangling classes, both directions shaped" \
              || fail "tc state is wrong"
+
+$SHAPER add 192.168.43.50 20103 1000 1500 >/dev/null 2>&1
+$SHAPER remove-class 20103 >/dev/null 2>&1
+python3 - "$STUB_TC" <<'PY'
+import json, sys
+db = json.load(open(sys.argv[1]))
+assert "1:20103" not in db["classes"], db["classes"]
+assert "1:103" in db["classes"], "remove-class dropped an unrelated class"
+assert not any("192.168.43.50" in f for f in db["filters"]), db["filters"]
+PY
+[ $? -eq 0 ] && pass "remove-class drops only that class id" || fail "remove-class left the transitional class"
 
 section "teardown"
 $SHAPER stop >/dev/null 2>&1

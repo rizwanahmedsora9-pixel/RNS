@@ -47,7 +47,7 @@ workflow artifact — see [CI](#continuous-integration).
 1. `adb install app-release.apk` (or just open the APK on the phone), then grant the app root when Magisk prompts.
 2. Launch the app. The gateway starts as a foreground service and the **Dashboard** shows live state: root, hotspot, WAN/LAN interfaces, portal, and an event log that names every command it runs - if something fails, the reason is on that screen.
 3. **Turning the hotspot on.** On Android 12+ the app starts the Wi-Fi hotspot itself via `cmd wifi start-softap`. On Android 9/10 (the Infinix Hot 8) no root command exists for that, so the app says so on the dashboard and shows **Open Android hotspot settings** - flip the toggle there and the app detects the AP interface within ~2 seconds and takes over automatically (IP, DHCP, NAT, portal). It also re-arms itself if the hotspot is toggled off and on again.
-4. When the hotspot comes up, Android's own tethering dnsmasq is stopped and replaced by ours (two DHCP servers on one wire would hand out conflicting leases). Switch the hotspot on *before* clients associate, or reconnect them once, so they pick up the 10.66.0.x lease straight away.
+4. When the hotspot comes up the app **keeps the address Android already assigned** (usually `192.168.43.1`). Replacing that with `10.66.0.1` is what left phones spinning on "Obtaining IP address". DHCP offers are sent as broadcasts, because MediaTek radios drop the unicast offer and the client never finishes DHCP. If Android's own DHCP server comes back and the two would fight, the app steps aside and lets the phone hand out addresses — the sign-in page still appears either way. After installing this update, tell users to **forget the Wi-Fi network and join again once**.
 5. **Vouchers** tab: pick a preset (1 Hour / 3 Hours / 1 Day / 7 Days) or fill in plan name, duration and speeds, then *Generate*. Codes are copyable/shareable straight from the dialog; the list filters by status and each row can be expired or deleted.
 6. **Users** tab: everyone currently on the LAN (online *with* a voucher vs *waiting at the portal*), saved user profiles - a name/phone/note per device MAC, recorded automatically the first time a device is seen - and session history.
 7. **Settings** tab: hotspot SSID/password, WAN/LAN interface pins (blank = automatic), with a *Detect* button that fills in what the phone currently has.
@@ -67,18 +67,26 @@ profiles survive because the update keeps the app's data.
 
 ### How the gate works
 
-Unauthenticated clients are dropped at `FORWARD`; only port 80 is DNATed to the portal, and
-port 443 is reset so the client falls back to its plain-HTTP probe (DNATing TLS to a
-plaintext server just yields certificate errors and no login sheet). On redemption:
+Unauthenticated clients are dropped at `FORWARD`. Port 80 is redirected on the phone to the
+local login page, and that page is returned **directly** (HTTP 200) for the OS probe URLs
+(`generate_204`, `hotspot-detect`, `ncsi`). A redirect to `:8080`, or a probe that times out,
+does not pop the sign-in sheet — the client just sits there with an IP and no internet.
+Port 443 is reset so the client falls back to its plain-HTTP probe (DNATing TLS to a
+plaintext server just yields certificate errors and no login sheet). DNS from clients that
+ignore the DHCP DNS server is redirected to the phone so the probe can resolve; answers are
+real, not forged to a private address (several Android builds treat that as "no internet"
+and never show the sheet). On redemption:
 
-1. a `dhcp-host=<mac>,<ip>` reservation is written and dnsmasq is `SIGHUP`ed, so the client
-   actually receives the assigned address;
-2. `ACCEPT` rules for that MAC+IP are inserted **above** the default-deny rule;
-3. a `RETURN` in `nat/PREROUTING` exempts the MAC from the portal redirect;
+1. a `mac,ip` reservation is written and dnsmasq is `SIGHUP`ed, so the client
+   actually receives the assigned address when this app owns DHCP;
+2. an `ACCEPT` for that **MAC** (not MAC+IP — the client is often still on its
+   old lease) is inserted **above** the default-deny rule;
+3. a `RETURN` exempts the MAC from the portal redirect;
 4. an HTB class plus an ingress `police` filter cap download *and* upload.
+   The address the client still holds is capped too, until DHCP moves it.
 
-Leases are 10 minutes so a client migrates to its reserved IP quickly; until then its old
-address is also accepted so it does not go dark mid-switch.
+Leases are 10 minutes so a client migrates to its reserved IP on the next renew.
+Until then the MAC rule already lets it through, so it does not go dark mid-switch.
 
 ## Continuous integration
 
