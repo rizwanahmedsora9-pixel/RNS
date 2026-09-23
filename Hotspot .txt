@@ -1,0 +1,377 @@
+~ $ su -c "ip link"                               
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqu
+eue state UNKNOWN mode DEFAULT group default qlen 
+1
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:0
+0:00:00
+2: ccmni0: <NOARP> mtu 1500 qdisc mq state DOWN mo
+de DEFAULT group default qlen 1000
+    link/ppp 5a:92:82:55:dc:03 brd ff:ff:ff:ff:ff:
+ff
+3: ccmni1: <NOARP,UP,LOWER_UP> mtu 1500 qdisc mq s
+tate UP mode DEFAULT group default qlen 1000
+    link/ppp 16:43:b8:e8:85:a1 brd ff:ff:ff:ff:ff:
+ff                                                
+4: ccmni2: <NOARP> mtu 1500 qdisc noop state DOWN 
+mode DEFAULT group default qlen 1000
+    link/ppp 16:ac:2f:4b:b9:ce brd ff:ff:ff:ff:ff:
+ff
+5: ccmni3: <NOARP> mtu 1500 qdisc noop state DOWN 
+mode DEFAULT group default qlen 1000              
+    link/ppp ea:ee:1b:a3:b9:a7 brd ff:ff:ff:ff:ff:
+ff
+6: ccmni4: <NOARP> mtu 1500 qdisc noop state DOWN 
+mode DEFAULT group default qlen 1000
+    link/ppp 2e:bf:cc:bf:86:67 brd ff:ff:ff:ff:ff:
+ff
+7: ccmni5: <NOARP> mtu 1500 qdisc noop state DOWN 
+mode DEFAULT group default qlen 1000
+    link/ppp de:a8:31:2e:c9:f7 brd ff:ff:ff:ff:ff:
+ff
+8: ccmni6: <NOARP> mtu 1500 qdisc noop state DOWN 
+mode DEFAULT group default qlen 1000
+    link/ppp 32:f7:c1:3f:a5:49 brd ff:ff:ff:ff:ff:
+ff
+9: ccmni7: <NOARP> mtu 1500 qdisc noop state DOWN 
+mode DEFAULT group default qlen 1000
+    link/ppp 12:bc:51:cf:ba:66 brd ff:ff:ff:ff:ff:
+ff
+10: ccmni8: <NOARP> mtu 1500 qdisc noop state DOWN
+ mode DEFAULT group default qlen 1000
+    link/ppp 6e:c9:aa:6d:60:13 brd ff:ff:ff:ff:ff:
+ff
+11: ccmni9: <NOARP> mtu 1500 qdisc noop state DOWN
+ mode DEFAULT group default qlen 1000
+    link/ppp a6:a8:12:8f:00:f0 brd ff:ff:ff:ff:ff:
+ff
+12: ccmni10: <NOARP> mtu 1500 qdisc noop state DOW
+N mode DEFAULT group default qlen 1000
+    link/ppp 0a:f7:31:e6:d1:18 brd ff:ff:ff:ff:ff:
+ff
+13: ccmni11: <NOARP> mtu 1500 qdisc noop state DOW
+N mode DEFAULT group default qlen 1000
+    link/ppp ea:44:94:fd:53:26 brd ff:ff:ff:ff:ff:
+ff
+14: ccmni12: <NOARP> mtu 1500 qdisc noop state DOW
+N mode DEFAULT group default qlen 1000
+    link/ppp 6a:e9:0e:7a:a2:94 brd ff:ff:ff:ff:ff:
+ff
+15: ccmni13: <NOARP> mtu 1500 qdisc noop state DOW
+N mode DEFAULT group default qlen 1000
+    link/ppp 5a:e7:76:b5:04:7a brd ff:ff:ff:ff:ff:
+ff
+16: ccmni14: <NOARP> mtu 1500 qdisc noop state DOW
+N mode DEFAULT group default qlen 1000
+    link/ppp 26:24:de:d1:bb:4a brd ff:ff:ff:ff:ff:
+ff
+17: ccmni15: <NOARP> mtu 1500 qdisc noop state DOW
+N mode DEFAULT group default qlen 1000
+    link/ppp 82:f4:64:74:e4:02 brd ff:ff:ff:ff:ff:
+ff
+18: ccmni16: <NOARP> mtu 1500 qdisc noop state DOW
+N mode DEFAULT group default qlen 1000
+    link/ppp 76:01:1a:ab:ca:08 brd ff:ff:ff:ff:ff:
+ff
+19: ccmni17: <NOARP> mtu 1500 qdisc noop state DOW
+N mode DEFAULT group default qlen 1000
+    link/ppp f6:06:d1:3d:71:5f brd ff:ff:ff:ff:ff:
+ff
+20: ccmni18: <NOARP> mtu 1500 qdisc noop state DOW
+N mode DEFAULT group default qlen 1000
+    link/ppp 1a:81:42:fe:da:a6 brd ff:ff:ff:ff:ff:
+ff
+21: ccmni19: <NOARP> mtu 1500 qdisc noop state DOW
+N mode DEFAULT group default qlen 1000
+    link/ppp 16:9c:33:b7:9e:45 brd ff:ff:ff:ff:ff:
+ff
+22: ccmni20: <NOARP> mtu 1500 qdisc noop state DOW
+N mode DEFAULT group default qlen 1000
+    link/ppp ba:1b:06:77:af:f1 brd ff:ff:ff:ff:ff:
+ff
+23: ccmni-lan: <BROADCAST,MULTICAST> mtu 1500 qdis
+c noop state DOWN mode DEFAULT group default qlen 
+1000
+    link/ether b6:b6:35:42:6e:28 brd ff:ff:ff:ff:f
+f:ff
+24: ifb0: <BROADCAST,NOARP> mtu 1500 qdisc noop st
+ate DOWN mode DEFAULT group default qlen 32
+    link/ether ba:6e:16:d1:88:ae brd ff:ff:ff:ff:f
+f:ff
+25: ifb1: <BROADCAST,NOARP> mtu 1500 qdisc noop st
+ate DOWN mode DEFAULT group default qlen 32
+    link/ether 5e:56:a4:56:6c:3e brd ff:ff:ff:ff:f
+f:ff
+26: tunl0@NONE: <NOARP> mtu 1480 qdisc noop state 
+DOWN mode DEFAULT group default qlen 1
+    link/ipip 0.0.0.0 brd 0.0.0.0
+27: ip_vti0@NONE: <NOARP> mtu 1480 qdisc noop stat
+e DOWN mode DEFAULT group default qlen 1
+    link/ipip 0.0.0.0 brd 0.0.0.0
+28: ip6_vti0@NONE: <NOARP> mtu 1500 qdisc noop sta
+te DOWN mode DEFAULT group default qlen 1
+    link/tunnel6 :: brd ::
+29: sit0@NONE: <NOARP> mtu 1480 qdisc noop state D
+OWN mode DEFAULT group default qlen 1
+    link/sit 0.0.0.0 brd 0.0.0.0
+30: ip6tnl0@NONE: <NOARP> mtu 1452 qdisc noop stat
+e DOWN mode DEFAULT group default qlen 1
+    link/tunnel6 :: brd ::
+~ $
+≠========================
+~ $ su -c "id"
+su -c "which iptables tc dnsmasq hostapd busybox"
+su -c "iptables --version"
+su -c "cat /proc/net/dev"                         
+su -c "iw list | grep -A 10 'valid interface combi
+nations'"
+getprop | grep -i wifi
+su -c "ip link"
+uid=0(root) gid=0(root) groups=0(root) context=u:r
+:magisk:s0
+/system/bin/iptables
+/system/bin/tc
+/system/bin/dnsmasq
+iptables v1.6.1
+Inter-|   Receive                                 
+               |  Transmit
+ face |bytes    packets errs drop fifo frame compr
+essed multicast|bytes    packets errs drop fifo co
+lls carrier compressed
+ccmni19:       0       0    0    0    0     0     
+     0         0        0       0    0    0    0  
+   0       0          0
+ip_vti0:       0       0    0    0    0     0     
+     0         0        0       0    0    0    0  
+   0       0          0
+ccmni1: 313218502  230858    0    0    0     0    
+      0         0 13205160  131320    0    0    0 
+    0       0          0
+  ifb0:       0       0    0    0    0     0      
+    0         0        0       0    0    0    0   
+  0       0          0
+ccmni12:       0       0    0    0    0     0     
+     0         0        0       0    0    0    0  
+   0       0          0
+ccmni8:       0       0    0    0    0     0      
+    0         0        0       0    0    0    0   
+  0       0          0
+  ifb1:       0       0    0    0    0     0      
+    0         0        0       0    0    0    0   
+  0       0          0
+ccmni16:       0       0    0    0    0     0     
+     0         0        0       0    0    0    0  
+   0       0          0
+ccmni6:       0       0    0    0    0     0      
+    0         0        0       0    0    0    0   
+  0       0          0
+ tunl0:       0       0    0    0    0     0      
+    0         0        0       0    0    0    0   
+  0       0          0
+ip6_vti0:       0       0    0    0    0     0    
+      0         0        0       0    0    0    0 
+    0       0          0
+ccmni13:       0       0    0    0    0     0     
+     0         0        0       0    0    0    0  
+   0       0          0
+    lo:  128286    1505    0    0    0     0      
+    0         0   128286    1505    0    0    0   
+  0       0          0
+ccmni4:       0       0    0    0    0     0      
+    0         0        0       0    0    0    0   
+  0       0          0
+ip6tnl0:       0       0    0    0    0     0     
+     0         0        0       0    0    0    0  
+   0       0          0
+ccmni17:       0       0    0    0    0     0     
+     0         0        0       0    0    0    0  
+   0       0          0
+ccmni2:       0       0    0    0    0     0      
+    0         0        0       0    0    0    0   
+  0       0          0
+ccmni10:       0       0    0    0    0     0     
+     0         0        0       0    0    0    0  
+   0       0          0
+ccmni9:       0       0    0    0    0     0      
+    0         0        0       0    0    0    0   
+  0       0          0
+ccmni-lan:       0       0    0    0    0     0   
+       0         0        0       0    0    0    0
+     0       0          0
+ccmni14:       0       0    0    0    0     0     
+     0         0        0       0    0    0    0  
+   0       0          0
+ccmni0: 314910017  252469    0    0    0     0    
+      0         0 25455416  163715    0    0    0 
+    0       0          0
+ccmni7:       0       0    0    0    0     0      
+    0         0        0       0    0    0    0   
+  0       0          0
+ccmni18:       0       0    0    0    0     0     
+     0         0        0       0    0    0    0  
+   0       0          0
+ccmni11:       0       0    0    0    0     0     
+     0         0        0       0    0    0    0  
+   0       0          0
+  sit0:       0       0    0    0    0     0      
+    0         0        0       0    0    0    0   
+  0       0          0
+ccmni5:       0       0    0    0    0     0      
+    0         0        0       0    0    0    0   
+  0       0          0
+ccmni15:       0       0    0    0    0     0     
+     0         0        0       0    0    0    0  
+   0       0          0
+ccmni3:       0       0    0    0    0     0      
+    0         0        0       0    0    0    0   
+  0       0          0
+ccmni20:       0       0    0    0    0     0     
+     0         0        0       0    0    0    0  
+   0       0          0
+/system/bin/sh: iw: not found
+[init.svc.wificond]: [running]
+[persist.vendor.mtk.viwifi.enable]: [0]
+[persist.vendor.viwifi_support]: [1]
+[ro.vendor.mtk_dhcpv6c_wifi]: [1]
+[ro.wifi.channels]: []
+[sys.wifitracing.started]: [1]
+[wifi.direct.interface]: [p2p0]
+[wifi.interface]: [wlan0]
+[wifi.tethering.interface]: [ap0]
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqu
+eue state UNKNOWN mode DEFAULT group default qlen 
+1
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:0
+0:00:00
+2: ccmni0: <NOARP> mtu 1500 qdisc mq state DOWN mo
+de DEFAULT group default qlen 1000
+    link/ppp 5a:92:82:55:dc:03 brd ff:ff:ff:ff:ff:
+ff
+3: ccmni1: <NOARP,UP,LOWER_UP> mtu 1500 qdisc mq s
+tate UP mode DEFAULT group default qlen 1000
+    link/ppp 16:43:b8:e8:85:a1 brd ff:ff:ff:ff:ff:
+ff
+4: ccmni2: <NOARP> mtu 1500 qdisc noop state DOWN 
+mode DEFAULT group default qlen 1000
+    link/ppp 16:ac:2f:4b:b9:ce brd ff:ff:ff:ff:ff:
+ff
+5: ccmni3: <NOARP> mtu 1500 qdisc noop state DOWN 
+mode DEFAULT group default qlen 1000
+    link/ppp ea:ee:1b:a3:b9:a7 brd ff:ff:ff:ff:ff:
+ff
+6: ccmni4: <NOARP> mtu 1500 qdisc noop state DOWN 
+mode DEFAULT group default qlen 1000
+    link/ppp 2e:bf:cc:bf:86:67 brd ff:ff:ff:ff:ff:
+ff
+7: ccmni5: <NOARP> mtu 1500 qdisc noop state DOWN 
+mode DEFAULT group default qlen 1000
+    link/ppp de:a8:31:2e:c9:f7 brd ff:ff:ff:ff:ff:
+ff
+8: ccmni6: <NOARP> mtu 1500 qdisc noop state DOWN 
+mode DEFAULT group default qlen 1000
+    link/ppp 32:f7:c1:3f:a5:49 brd ff:ff:ff:ff:ff:
+ff
+9: ccmni7: <NOARP> mtu 1500 qdisc noop state DOWN 
+mode DEFAULT group default qlen 1000
+    link/ppp 12:bc:51:cf:ba:66 brd ff:ff:ff:ff:ff:
+ff
+10: ccmni8: <NOARP> mtu 1500 qdisc noop state DOWN
+ mode DEFAULT group default qlen 1000
+    link/ppp 6e:c9:aa:6d:60:13 brd ff:ff:ff:ff:ff:
+ff
+11: ccmni9: <NOARP> mtu 1500 qdisc noop state DOWN
+ mode DEFAULT group default qlen 1000
+    link/ppp a6:a8:12:8f:00:f0 brd ff:ff:ff:ff:ff:
+ff
+12: ccmni10: <NOARP> mtu 1500 qdisc noop state DOW
+N mode DEFAULT group default qlen 1000
+    link/ppp 0a:f7:31:e6:d1:18 brd ff:ff:ff:ff:ff:
+ff
+13: ccmni11: <NOARP> mtu 1500 qdisc noop state DOW
+N mode DEFAULT group default qlen 1000
+    link/ppp ea:44:94:fd:53:26 brd ff:ff:ff:ff:ff:
+ff
+14: ccmni12: <NOARP> mtu 1500 qdisc noop state DOW
+N mode DEFAULT group default qlen 1000
+    link/ppp 6a:e9:0e:7a:a2:94 brd ff:ff:ff:ff:ff:
+ff
+15: ccmni13: <NOARP> mtu 1500 qdisc noop state DOW
+N mode DEFAULT group default qlen 1000
+    link/ppp 5a:e7:76:b5:04:7a brd ff:ff:ff:ff:ff:
+ff
+16: ccmni14: <NOARP> mtu 1500 qdisc noop state DOW
+N mode DEFAULT group default qlen 1000
+    link/ppp 26:24:de:d1:bb:4a brd ff:ff:ff:ff:ff:
+ff
+17: ccmni15: <NOARP> mtu 1500 qdisc noop state DOW
+N mode DEFAULT group default qlen 1000
+    link/ppp 82:f4:64:74:e4:02 brd ff:ff:ff:ff:ff:
+ff
+18: ccmni16: <NOARP> mtu 1500 qdisc noop state DOW
+N mode DEFAULT group default qlen 1000
+    link/ppp 76:01:1a:ab:ca:08 brd ff:ff:ff:ff:ff:
+ff
+19: ccmni17: <NOARP> mtu 1500 qdisc noop state DOW
+N mode DEFAULT group default qlen 1000
+    link/ppp f6:06:d1:3d:71:5f brd ff:ff:ff:ff:ff:
+ff
+20: ccmni18: <NOARP> mtu 1500 qdisc noop state DOW
+N mode DEFAULT group default qlen 1000
+    link/ppp 1a:81:42:fe:da:a6 brd ff:ff:ff:ff:ff:
+ff
+21: ccmni19: <NOARP> mtu 1500 qdisc noop state DOW
+N mode DEFAULT group default qlen 1000
+    link/ppp 16:9c:33:b7:9e:45 brd ff:ff:ff:ff:ff:
+ff
+22: ccmni20: <NOARP> mtu 1500 qdisc noop state DOW
+N mode DEFAULT group default qlen 1000
+    link/ppp ba:1b:06:77:af:f1 brd ff:ff:ff:ff:ff:
+ff
+23: ccmni-lan: <BROADCAST,MULTICAST> mtu 1500 qdis
+c noop state DOWN mode DEFAULT group default qlen 
+1000
+    link/ether b6:b6:35:42:6e:28 brd ff:ff:ff:ff:f
+f:ff
+24: ifb0: <BROADCAST,NOARP> mtu 1500 qdisc noop st
+ate DOWN mode DEFAULT group default qlen 32
+    link/ether ba:6e:16:d1:88:ae brd ff:ff:ff:ff:f
+f:ff
+25: ifb1: <BROADCAST,NOARP> mtu 1500 qdisc noop st
+ate DOWN mode DEFAULT group default qlen 32
+    link/ether 5e:56:a4:56:6c:3e brd ff:ff:ff:ff:f
+f:ff
+26: tunl0@NONE: <NOARP> mtu 1480 qdisc noop state 
+DOWN mode DEFAULT group default qlen 1
+    link/ipip 0.0.0.0 brd 0.0.0.0
+27: ip_vti0@NONE: <NOARP> mtu 1480 qdisc noop stat
+e DOWN mode DEFAULT group default qlen 1
+    link/ipip 0.0.0.0 brd 0.0.0.0
+28: ip6_vti0@NONE: <NOARP> mtu 1500 qdisc noop sta
+te DOWN mode DEFAULT group default qlen 1
+    link/tunnel6 :: brd ::
+29: sit0@NONE: <NOARP> mtu 1480 qdisc noop state D
+OWN mode DEFAULT group default qlen 1
+    link/sit 0.0.0.0 brd 0.0.0.0
+30: ip6tnl0@NONE: <NOARP> mtu 1452 qdisc noop stat
+e DOWN mode DEFAULT group default qlen 1
+    link/tunnel6 :: brd ::
+~ $
+
+
+===============================÷÷÷=
+i hae a project now
+supose 
+Router 1>My Rooted Android Infinix Hot8>Router2>Users
+With Bandwith Conyrol
+Voucher And Bunding Mac n Io On Voucher Apply
+User Profiling And Other Stuff
+Confirm Tjis Can Be Physible and i want user connecto my network by any means 
+set up is like i have connevtion in my router from isp using that router in my android rooted phone and then my rooter android gave supply to 2nd router and that riuter supply to users connwvt by cable or wifi.and when ay user connevts a captive portal opens automatic in android or pc and ask for login credentials and when user apply voucher that our app genertaed apply that then it binds its mac address with fix ip staic ip which our app controls not the previous router and when voucher uses in second device it must not work.
+
+make a fully source code if u have question aas if u need any cose to run in terux to get all info u can ask.tell me code i will run and output.txtvi will giveu then u mae a full working oure kotlin app source code
+================================
+This tells me:
+Whether you have root shell access properly working in Termux
+Whether iptables/tc/dnsmasq binaries exist (Android often lacks dnsmasq/full tc — we may need to push static binaries)
+Whether your WiFi chip supports simultaneous STA+AP mode (the iw list combinations output)
+Available network interfaces
+Send me that output and I'll build the actual project: Kotlin app (Room DB for vouchers, NanoHTTPD for the captive portal page, root shell execution layer for iptables/tc/dnsmasq control) plus the shell script layer it drives.
