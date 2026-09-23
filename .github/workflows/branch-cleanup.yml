@@ -1,0 +1,173 @@
+name: Branch cleanup
+
+# Keeps the repository on a single working branch.
+#
+# Runs on every push to main (which is where merges land), on a schedule, and on
+# demand. It deletes every remote branch except main / the default branch / the
+# branch listed in the KEEP_BRANCHES repository variable / the branch that
+# triggered a manual run, then reconciles the checkout against origin so a
+# diverged or half-deleted branch state cannot persist.
+#
+# It NEVER pushes to, resets, or deletes main.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Report what would be deleted without deleting anything'
+        type: boolean
+        default: false
+      include_open_pr_branches:
+        description: 'Also delete branches that still have an OPEN pull request'
+        type: boolean
+        default: false
+
+# NOTE: there is no `administration` scope for GITHUB_TOKEN, so the repo setting
+# "automatically delete head branches" can only be changed with a fine-grained PAT
+# that has Administration: write. Supply one as the REPO_ADMIN_TOKEN secret and the
+# first step below will flip it; otherwise it prints the one-click alternative.
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: branch-cleanup-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Delete stale branches
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # GitHub's own "delete head branch on merge" does the common case; the prune
+      # job below is the safety net for branches it misses.
+      - name: Enable automatic head branch deletion
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN || github.token }}
+          script: |
+            const { owner, repo } = context.repo;
+            try {
+              await github.rest.repos.update({ owner, repo, delete_branch_on_merge: true });
+              core.info('delete_branch_on_merge is enabled.');
+            } catch (e) {
+              core.warning(
+                `Could not change the repo setting: ${e.message}. ` +
+                'Either add a fine-grained PAT with Administration: write as the ' +
+                'REPO_ADMIN_TOKEN secret, or tick "Automatically delete head branches" ' +
+                'under Settings > General > Pull Requests. The prune job below is the ' +
+                'safety net either way.',
+              );
+            }
+
+      - name: Prune remote branches
+        uses: actions/github-script@v8
+        env:
+          KEEP_BRANCHES: ${{ vars.KEEP_BRANCHES }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+          INCLUDE_OPEN: ${{ github.event.inputs.include_open_pr_branches }}
+          CURRENT_REF: ${{ github.ref_name }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const dryRun = process.env.DRY_RUN === 'true';
+            const includeOpen = process.env.INCLUDE_OPEN === 'true';
+            const extra = (process.env.KEEP_BRANCHES || '')
+              .split(',').map((s) => s.trim()).filter(Boolean);
+
+            const { data: repoInfo } = await github.rest.repos.get({ owner, repo });
+            const keep = new Set(
+              ['main', 'master', repoInfo.default_branch, process.env.CURRENT_REF, ...extra]
+                .filter(Boolean),
+            );
+
+            const branches = await github.paginate(github.rest.repos.listBranches, {
+              owner, repo, per_page: 100,
+            });
+            const openPrs = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: 'open', per_page: 100,
+            });
+            const openHead = new Map(openPrs.map((p) => [p.head.ref, p.number]));
+
+            const deleted = [];
+            const skipped = [];
+            const failed = [];
+
+            for (const branch of branches) {
+              const name = branch.name;
+              if (keep.has(name)) { skipped.push({ name, reason: 'kept (protected by this workflow)' }); continue; }
+              if (branch.protected) { skipped.push({ name, reason: 'protected branch rule' }); continue; }
+
+              const pr = openHead.get(name);
+              if (pr && !includeOpen) {
+                skipped.push({ name, reason: `open PR #${pr} (re-run with include_open_pr_branches to force)` });
+                continue;
+              }
+
+              if (dryRun) { deleted.push({ name, reason: 'dry run' }); continue; }
+
+              try {
+                await github.rest.git.deleteRef({ owner, repo, ref: `heads/${name}` });
+                deleted.push({ name, reason: pr ? `merged/closed PR #${pr}` : 'stale' });
+              } catch (e) {
+                failed.push({ name, reason: e.message });
+                core.warning(`Could not delete ${name}: ${e.message}`);
+              }
+            }
+
+            const table = (rows, empty) =>
+              rows.length
+                ? rows.map((r) => `| \`${r.name}\` | ${r.reason} |`).join('\n')
+                : `| — | ${empty} |`;
+
+            await core.summary
+              .addRaw(`## Branch cleanup${dryRun ? ' (dry run)' : ''}\n\n`)
+              .addRaw(`Kept: ${[...keep].map((k) => `\`${k}\``).join(', ')}\n\n`)
+              .addRaw(`### Deleted (${deleted.length})\n\n| Branch | Why |\n| --- | --- |\n${table(deleted, 'nothing to delete')}\n\n`)
+              .addRaw(`### Skipped (${skipped.length})\n\n| Branch | Why |\n| --- | --- |\n${table(skipped, 'none')}\n\n`)
+              .addRaw(`### Failed (${failed.length})\n\n| Branch | Why |\n| --- | --- |\n${table(failed, 'none')}\n\n`)
+              .write();
+
+            core.info(`deleted=${deleted.length} skipped=${skipped.length} failed=${failed.length}`);
+
+      - name: Reconcile this checkout with origin
+        env:
+          DEFAULT_BRANCH: main
+        run: |
+          set -euo pipefail
+          git remote prune origin
+          git fetch --all --prune --quiet
+
+          echo "### Remote branches after cleanup" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          git branch -r --format='%(refname:short)' | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+          git rev-parse --verify --quiet "origin/${DEFAULT_BRANCH}" > /dev/null \
+            || { echo "::error::origin/${DEFAULT_BRANCH} is missing"; exit 1; }
+
+          # Fix a diverged / stale local branch state instead of failing on it.
+          if ! git diff --quiet "origin/${DEFAULT_BRANCH}" HEAD 2>/dev/null; then
+            echo "::warning::local HEAD differs from origin/${DEFAULT_BRANCH}; resetting local copy"
+            git checkout --quiet "$DEFAULT_BRANCH" 2>/dev/null || git checkout --quiet -B "$DEFAULT_BRANCH" "origin/${DEFAULT_BRANCH}"
+            git reset --hard "origin/${DEFAULT_BRANCH}"
+          fi
+
+          LEFTOVER=$(git branch -r --format='%(refname:short)' \
+            | grep -v -E "^origin/(HEAD|${DEFAULT_BRANCH})$" || true)
+          if [ -n "$LEFTOVER" ]; then
+            echo "::warning::branches still present besides ${DEFAULT_BRANCH}: $(echo "$LEFTOVER" | tr '\n' ' ')"
+            echo "Still present: $LEFTOVER" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Only origin/${DEFAULT_BRANCH} remains." >> "$GITHUB_STEP_SUMMARY"
+          fi

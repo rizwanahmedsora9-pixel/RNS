@@ -1,0 +1,117 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'org.jetbrains.kotlin.kapt'
+}
+
+/*
+ * Optional release signing. Provide RELEASE_STORE_FILE / RELEASE_STORE_PASSWORD /
+ * RELEASE_KEY_ALIAS / RELEASE_KEY_PASSWORD (environment or -P) and the release
+ * build is signed; without them Gradle emits an unsigned release APK.
+ */
+def releaseStoreFile = System.getenv('RELEASE_STORE_FILE') ?: project.findProperty('RELEASE_STORE_FILE')
+def releaseSigningReady = releaseStoreFile ? file(releaseStoreFile).exists() : false
+
+// Resolved eagerly and explicitly: `versionCode (x) as int` parses in Groovy as
+// `(versionCode(x)) as int`, i.e. it calls the setter with a String and then
+// casts the void return - which fails at configuration time.
+def resolvedVersionCode = Integer.parseInt((project.findProperty('appVersionCode') ?: '1').toString())
+def resolvedVersionName = (project.findProperty('appVersionName') ?: '1.0').toString()
+
+android {
+    namespace 'com.hotspot.billing'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.hotspot.billing'
+        minSdk 26
+        targetSdk 34
+        versionCode = resolvedVersionCode
+        versionName = resolvedVersionName
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+
+    lint {
+        // Report, don't fail the build - CI uploads the lint report as an artifact.
+        abortOnError false
+        warningsAsErrors false
+        checkReleaseBuilds false
+    }
+
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+}
+
+if (releaseSigningReady) {
+    android.signingConfigs.create('release') {
+        storeFile file(releaseStoreFile)
+        storePassword System.getenv('RELEASE_STORE_PASSWORD') ?: project.findProperty('RELEASE_STORE_PASSWORD')
+        keyAlias System.getenv('RELEASE_KEY_ALIAS') ?: project.findProperty('RELEASE_KEY_ALIAS')
+        keyPassword System.getenv('RELEASE_KEY_PASSWORD') ?: project.findProperty('RELEASE_KEY_PASSWORD')
+    }
+    android.buildTypes.getByName('release').signingConfig = android.signingConfigs.getByName('release')
+}
+
+/*
+ * scripts/ is the single source of truth for the root shell layer; the copies
+ * under src/main/assets are generated here so the two can never drift. Plain
+ * file IO rather than a Copy spec - two small files, nothing to mis-configure.
+ */
+def scriptSrc = rootProject.file('scripts')
+def scriptDst = file('src/main/assets')
+def scriptNames = ['setup_network.sh', 'bandwidth_control.sh']
+
+tasks.register('syncShellScripts') {
+    group = 'build'
+    description = 'Copies the two root shell scripts into src/main/assets (generated, git-ignored).'
+    doLast {
+        scriptDst.mkdirs()
+        scriptNames.each { name ->
+            new File(scriptSrc, name).withInputStream { input ->
+                new File(scriptDst, name).withOutputStream { output -> output << input }
+            }
+        }
+    }
+}
+
+tasks.matching { it.name == 'preBuild' || (it.name.startsWith('merge') && it.name.endsWith('Assets')) }
+    .configureEach { dependsOn 'syncShellScripts' }
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+
+    // Root shell execution
+    implementation 'com.github.topjohnwu.libsu:core:5.2.1'
+
+    // Local embedded HTTP server for the captive portal
+    implementation 'org.nanohttpd:nanohttpd:2.3.1'
+
+    // Room (local DB for vouchers/sessions)
+    implementation 'androidx.room:room-runtime:2.6.1'
+    implementation 'androidx.room:room-ktx:2.6.1'
+    kapt 'androidx.room:room-compiler:2.6.1'
+
+    // Coroutines
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+
+    // Background sweep of expired vouchers
+    implementation 'androidx.work:work-runtime-ktx:2.9.0'
+
+    testImplementation 'junit:junit:4.13.2'
+}

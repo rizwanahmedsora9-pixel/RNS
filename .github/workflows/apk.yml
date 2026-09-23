@@ -1,0 +1,227 @@
+name: APK
+
+# Builds an installable APK for every pull request and every push to main,
+# uploads it as a workflow artifact, and posts the download link back on the PR.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: read
+
+concurrency:
+  group: apk-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: '17'
+  ANDROID_PLATFORM: '34'
+  ANDROID_BUILD_TOOLS: '34.0.0'
+
+jobs:
+  shell-selftest:
+    name: Root shell layer self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Run the firewall / shaper self-test
+        run: bash tools/run-script-selftest.sh
+
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: shell-selftest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      # The GitHub runner images ship the Android SDK; use it rather than
+      # re-downloading a second copy of the command-line tools.
+      - name: Locate the Android SDK
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "SDK root: $SDK"
+          if command -v sdkmanager > /dev/null 2>&1; then
+            SM="$(command -v sdkmanager)"
+          elif [ -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SM="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          else
+            echo "::error::no sdkmanager found (looked on PATH and in $SDK/cmdline-tools/latest/bin)"
+            find "$SDK" -maxdepth 2 -type d 2>/dev/null | head -30
+            exit 1
+          fi
+          echo "SDKMANAGER_BIN=$SM" >> "$GITHUB_ENV"
+          java -version 2>&1 | head -2
+          "$SM" --version 2>&1 | head -2 || true
+          echo "installed platforms:"; ls "$SDK/platforms" 2>/dev/null || true
+
+      - name: Install the Android platform this project compiles against
+        run: |
+          set -euo pipefail
+          yes | "$SDKMANAGER_BIN" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER_BIN" --install \
+            "platforms;android-${ANDROID_PLATFORM}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}" \
+            "platform-tools"
+
+      - name: Set up Gradle build cache
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Check shell scripts sync into assets
+        run: |
+          set -euo pipefail
+          rm -f app/src/main/assets/*.sh
+          ./gradlew --no-daemon --console=plain --stacktrace :app:syncShellScripts 2>&1 | tee -a gradle.log
+          # The Gradle task alone must produce byte-identical copies, otherwise the
+          # scripts the app ships can drift from scripts/ (they are git-ignored).
+          for f in scripts/*.sh; do
+            cmp "$f" "app/src/main/assets/$(basename "$f")"
+          done
+          ls -l app/src/main/assets
+
+      - name: Unit tests
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --console=plain --stacktrace testDebugUnitTest 2>&1 | tee -a gradle.log
+
+      - name: Lint
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --console=plain lintDebug 2>&1 | tee -a gradle.log
+
+      - name: Build debug and release APKs
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --console=plain --stacktrace \
+            assembleDebug assembleRelease \
+            -PappVersionCode="${GITHUB_RUN_NUMBER}" \
+            -PappVersionName="1.0.${GITHUB_RUN_NUMBER}+${GITHUB_SHA::7}" 2>&1 | tee -a gradle.log
+
+      - name: Collect APKs
+        id: collect
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          SHORT="${GITHUB_SHA::7}"
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/hotspot-billing-${SHORT}-debug.apk"
+          # The release APK is unsigned unless RELEASE_STORE_* secrets are configured.
+          shopt -s nullglob
+          for apk in app/build/outputs/apk/release/*.apk; do
+            cp "$apk" "dist/hotspot-billing-${SHORT}-release-unsigned.apk"
+          done
+          shopt -u nullglob
+          {
+            echo "version=1.0.${GITHUB_RUN_NUMBER}+${SHORT}"
+          } >> "$GITHUB_OUTPUT"
+          ls -lh dist
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: hotspot-billing-apk-${{ github.run_number }}
+          path: dist/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: reports-${{ github.run_number }}
+          path: |
+            app/build/reports/lint-results-debug.html
+            app/build/reports/tests/testDebugUnitTest
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # Runner log storage is not always reachable from restricted networks, so
+      # mirror the interesting failure lines into the run annotations as well.
+      - name: Surface build failures as annotations
+        if: failure()
+        run: |
+          set +e
+          echo "::error::APK build failed - diagnostics below (job log may be unreachable)"
+          echo "::error::assets dir: $(ls app/src/main/assets 2>&1 | tr '\n' ' ')"
+          if [ -s gradle.log ]; then
+            grep -E "FAILURE|What went wrong|^e: |error:|Caused by:|Could not|not found|Task .* FAILED|Exception" gradle.log \
+              | sed 's/^[[:space:]]*//' | sort -u | tail -n 8 \
+              | while IFS= read -r line; do echo "::error::${line}"; done
+          else
+            echo "::error::no gradle.log produced - the failure happened before Gradle ran"
+          fi
+
+      - name: Post build result on the pull request
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v8
+        env:
+          APK_VERSION: ${{ steps.collect.outputs.version }}
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- apk-build-result -->';
+            const ok = '${{ job.status }}' === 'success';
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            let tail = '';
+            if (!ok) {
+              try {
+                const log = fs.readFileSync('gradle.log', 'utf8');
+                tail = log.slice(-6000);
+              } catch (e) {
+                tail = `(no gradle.log: ${e.message})`;
+              }
+            }
+
+            const body = [
+              marker,
+              `### APK ${ok ? '✅ built' : '❌ failed'}`,
+              '',
+              '| | |',
+              '|---|---|',
+              `| Commit | \`${context.sha.slice(0, 7)}\` |`,
+              `| Version | \`${process.env.APK_VERSION || 'n/a'}\` |`,
+              `| Artifact | \`hotspot-billing-apk-${context.runNumber}\` |`,
+              `| Build log | [Actions run #${context.runNumber}](${runUrl}) |`,
+              '',
+              ok
+                ? 'Download from the **Artifacts** section at the bottom of the build log page.'
+                : ['The build did not finish. Gradle output tail:', '', '```', tail, '```'].join('\n'),
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find((c) => (c.body || '').includes(marker));
+            const payload = { owner: context.repo.owner, repo: context.repo.repo, body };
+            if (existing) {
+              await github.rest.issues.updateComment({ ...payload, comment_id: existing.id });
+            } else {
+              await github.rest.issues.createComment({ ...payload, issue_number: context.issue.number });
+            }

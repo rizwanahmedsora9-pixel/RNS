@@ -1,0 +1,173 @@
+name: README
+
+# Keeps the "Pull requests" section of README.md in sync on every PR event and on
+# every push to main. The section lives between GENERATED markers, so hand-written
+# documentation is never touched.
+#
+# Loop safety: this workflow ignores changes to README.md, and its own commits are
+# README-only and tagged [skip ci], so an update can never re-trigger itself.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+    branches: [main]
+    paths-ignore: ['README.md']
+  push:
+    branches: [main]
+    paths-ignore: ['README.md']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: readme-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  update-readme:
+    name: Refresh pull request log
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Resolve target branch
+        id: target
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+          FORK: ${{ github.event.pull_request.head.repo.fork }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            if [ "${ACTION:-}" = "closed" ]; then
+              # Merged or closed: the PR list on the base branch is what changed.
+              echo "fork=false" >> "$GITHUB_OUTPUT"
+              echo "ref=${BASE_REF:-main}" >> "$GITHUB_OUTPUT"
+            elif [ "${FORK:-false}" = "true" ]; then
+              echo "fork=true" >> "$GITHUB_OUTPUT"
+              echo "ref=" >> "$GITHUB_OUTPUT"
+              echo "Forked PR head branch is not writable with GITHUB_TOKEN; skipping commit."
+            else
+              echo "fork=false" >> "$GITHUB_OUTPUT"
+              echo "ref=${HEAD_REF}" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "fork=false" >> "$GITHUB_OUTPUT"
+            echo "ref=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+          cat "$GITHUB_OUTPUT"
+
+      - name: Checkout target branch
+        if: steps.target.outputs.ref != ''
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.target.outputs.ref }}
+          fetch-depth: 1
+
+      - name: Render the pull request log into README.md
+        if: steps.target.outputs.ref != ''
+        uses: actions/github-script@v8
+        env:
+          TARGET_REF: ${{ steps.target.outputs.ref }}
+        with:
+          script: |
+            const fs = require('fs');
+            const BEGIN = '<!-- BEGIN GENERATED: pr-log -->';
+            const END = '<!-- END GENERATED: pr-log -->';
+            const SKIP = 'chore(readme): refresh pull request log [skip ci]';
+
+            // Never build on top of our own commit - guards the trigger loop even
+            // if the paths-ignore filter is removed later.
+            const { data: head } = await github.rest.repos.getCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: process.env.TARGET_REF,
+            });
+            if ((head.commit.message || '').startsWith(SKIP)) {
+              core.info('Target branch head is already our own commit; nothing to do.');
+              fs.writeFileSync('.readme-unchanged', '1');
+              return;
+            }
+
+            const { data: pulls } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'all',
+              sort: 'updated',
+              direction: 'desc',
+              per_page: 25,
+            });
+
+            const open = pulls.filter((p) => p.state === 'open').length;
+            const merged = pulls.filter((p) => p.merged_at).length;
+            const closed = pulls.filter((p) => p.state === 'closed' && !p.merged_at).length;
+
+            const stateOf = (p) => {
+              if (p.merged_at) return '🟣 merged';
+              if (p.state === 'open') return '🟢 open';
+              return '🔴 closed';
+            };
+            const esc = (s) => (s || '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+
+            const rows = pulls.length
+              ? pulls.map((p) => [
+                  `[#${p.number}](${p.html_url})`,
+                  esc(p.title),
+                  `@${p.user ? p.user.login : 'unknown'}`,
+                  `\`${esc(p.head.ref)}\``,
+                  stateOf(p),
+                  p.updated_at.slice(0, 10),
+                ].join(' | '))
+              : ['— | _no pull requests yet_ | — | — | — | —'];
+
+            const block = [
+              BEGIN,
+              '### Pull requests',
+              '',
+              '_Regenerated automatically by `.github/workflows/readme.yml` — edit anything outside the markers instead._',
+              '',
+              `**${open}** open · **${merged}** merged · **${closed}** closed without merging · updated ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`,
+              '',
+              '| PR | Title | Author | Branch | State | Updated |',
+              '| --- | --- | --- | --- | --- | --- |',
+              ...rows,
+              END,
+            ].join('\n');
+
+            const path = 'README.md';
+            let readme = fs.existsSync(path) ? fs.readFileSync(path, 'utf8') : `# ${context.repo.repo}\n`;
+            const startIdx = readme.indexOf(BEGIN);
+            const endIdx = readme.indexOf(END);
+
+            if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+              readme = readme.slice(0, startIdx) + block + readme.slice(endIdx + END.length);
+            } else {
+              readme = readme.replace(/\s*$/, '\n\n') + block + '\n';
+            }
+
+            if (fs.existsSync(path) && fs.readFileSync(path, 'utf8') === readme) {
+              core.info('README.md already up to date.');
+              fs.writeFileSync('.readme-unchanged', '1');
+              return;
+            }
+            fs.writeFileSync(path, readme);
+            core.info('README.md rewritten.');
+
+      - name: Commit and push
+        if: steps.target.outputs.ref != '' && !hashFiles('.readme-unchanged')
+        env:
+          TARGET_REF: ${{ steps.target.outputs.ref }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          if git diff --cached --quiet; then
+            echo "No README change to commit."
+            exit 0
+          fi
+          git commit -m "chore(readme): refresh pull request log [skip ci]"
+          git push origin "HEAD:${TARGET_REF}"

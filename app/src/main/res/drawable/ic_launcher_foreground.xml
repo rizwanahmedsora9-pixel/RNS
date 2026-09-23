@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Simple "wifi arches" mark, drawn inside the 72dp safe zone of the 108dp canvas. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M54,74m-6,0a6,6 0,1 1,12 0a6,6 0,1 1,-12 0" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M54,58c-6.6,0 -12.6,2.7 -16.9,7l5.7,5.7C45.8,67.6 49.7,66 54,66s8.2,1.6 11.2,4.7l5.7,-5.7C66.6,60.7 60.6,58 54,58z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M54,40c-11.6,0 -22.1,4.7 -29.7,12.3l5.7,5.7C36.1,51.9 44.6,48 54,48s17.9,3.9 24,10l5.7,-5.7C76.1,44.7 65.6,40 54,40z" />
+</vector>
