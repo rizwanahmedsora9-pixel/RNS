@@ -127,13 +127,10 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           SHORT="${GITHUB_SHA::7}"
+          # Both APKs are signed with the committed keystore (keystore/hotspot-billing.p12),
+          # so either one installs as a normal update over any earlier build.
           cp app/build/outputs/apk/debug/app-debug.apk "dist/hotspot-billing-${SHORT}-debug.apk"
-          # The release APK is unsigned unless RELEASE_STORE_* secrets are configured.
-          shopt -s nullglob
-          for apk in app/build/outputs/apk/release/*.apk; do
-            cp "$apk" "dist/hotspot-billing-${SHORT}-release-unsigned.apk"
-          done
-          shopt -u nullglob
+          cp app/build/outputs/apk/release/app-release.apk "dist/hotspot-billing-${SHORT}-release.apk"
           {
             echo "version=1.0.${GITHUB_RUN_NUMBER}+${SHORT}"
           } >> "$GITHUB_OUTPUT"

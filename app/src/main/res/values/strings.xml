@@ -1,4 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Hotspot Billing</string>
+
+    <string name="tab_dashboard">Dashboard</string>
+    <string name="tab_vouchers">Vouchers</string>
+    <string name="tab_users">Users</string>
+    <string name="tab_settings">Settings</string>
+
+    <string name="btn_start">Start hotspot</string>
+    <string name="btn_stop">Stop hotspot</string>
+    <string name="btn_open_tether">Open Android hotspot settings</string>
+    <string name="btn_generate">Generate vouchers</string>
+    <string name="btn_detect">Detect</string>
+    <string name="btn_apply">Save &amp; restart hotspot</string>
+    <string name="btn_stop_all">Stop everything</string>
 </resources>

@@ -118,6 +118,29 @@ dnsmasq_pid() {
     return 1
 }
 
+# Android's own tethering stack also spawns a dnsmasq on the LAN interface as
+# soon as the user flips the hotspot toggle. Two DHCP servers on one wire hand
+# out conflicting leases from different subnets, so before starting ours, stop
+# every dnsmasq that is not ours. (We are root, and killing theirs does not
+# bring the AP interface down - hostapd owns that, not dnsmasq.)
+kill_foreign_dnsmasq() {
+    OUR_PID=$(dnsmasq_pid 2>/dev/null) || OUR_PID=""
+    for proc in /proc/[0-9]*; do
+        pid=${proc#/proc/}
+        [ -n "$OUR_PID" ] && [ "$pid" = "$OUR_PID" ] && continue
+        cmdline=$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null) || continue
+        case "$cmdline" in
+            *dnsmasq*)
+                if kill "$pid" 2>/dev/null; then
+                    log "stopped foreign dnsmasq (pid $pid): $cmdline"
+                fi
+                ;;
+        esac
+    done
+    # Give it a moment to release the DHCP sockets before we bind ours.
+    sleep 1
+}
+
 # --- subcommands -------------------------------------------------------------
 
 start() {
@@ -179,6 +202,7 @@ start() {
         done < "$AUTHORIZED_FILE"
     fi
 
+    kill_foreign_dnsmasq
     start_dnsmasq "$LAN_IF"
     log "start complete"
 }

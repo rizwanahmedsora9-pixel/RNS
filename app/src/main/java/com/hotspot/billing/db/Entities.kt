@@ -33,3 +33,19 @@ data class UserSession(
     val bytesDown: Long = 0,
     val deviceLabel: String? = null   // optional, e.g. user-agent-derived hint for profiling
 )
+
+/**
+ * A known client device - the "user profile" side of the billing system.
+ * Rows are created automatically the first time a device is seen on the LAN
+ * (DHCP lease or voucher redemption); the operator fills in who it belongs to.
+ */
+@Entity(tableName = "device_profiles")
+data class DeviceProfile(
+    @PrimaryKey val mac: String,
+    val label: String? = null,        // e.g. "Ali - Samsung A12"
+    val phone: String? = null,
+    val note: String? = null,
+    val hostname: String? = null,     // from the DHCP lease, e.g. "android-4f2..."
+    val firstSeen: Long = System.currentTimeMillis(),
+    val lastSeen: Long = System.currentTimeMillis()
+)

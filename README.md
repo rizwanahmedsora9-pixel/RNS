@@ -44,17 +44,26 @@ workflow artifact — see [CI](#continuous-integration).
 
 ## Deploy
 
-1. `adb install app-debug.apk`, then grant the app root when Magisk prompts.
-2. Confirm the topology and pin it in `/data/local/tmp/hotspot.env` on the phone:
-   ```sh
-   su -c 'printf "WAN_IF=ccmni0\nLAN_IF=ap0\n" > /data/local/tmp/hotspot.env'
-   ```
-   `WAN_IF=auto` (the default) takes the interface that holds the default route. **Do not
-   leave it on the old hardcoded `wlan0`** — `Hotspot .txt` shows `wlan0` never appears in
-   `ip link`, while `ccmni0`/`ccmni1` (cellular PPP) carry the traffic.
-3. Launch the app. It copies both scripts to `/data/local/tmp`, brings up NAT + DHCP +
-   firewall, starts the shaper, and listens on `10.66.0.1:8080`.
-4. Check it with `su -c 'sh /data/local/tmp/setup_network.sh status'`.
+1. `adb install app-release.apk` (or just open the APK on the phone), then grant the app root when Magisk prompts.
+2. Launch the app. The gateway starts as a foreground service and the **Dashboard** shows live state: root, hotspot, WAN/LAN interfaces, portal, and an event log that names every command it runs - if something fails, the reason is on that screen.
+3. **Turning the hotspot on.** On Android 12+ the app starts the Wi-Fi hotspot itself via `cmd wifi start-softap`. On Android 9/10 (the Infinix Hot 8) no root command exists for that, so the app says so on the dashboard and shows **Open Android hotspot settings** - flip the toggle there and the app detects the AP interface within ~2 seconds and takes over automatically (IP, DHCP, NAT, portal). It also re-arms itself if the hotspot is toggled off and on again.
+4. When the hotspot comes up, Android's own tethering dnsmasq is stopped and replaced by ours (two DHCP servers on one wire would hand out conflicting leases). Switch the hotspot on *before* clients associate, or reconnect them once, so they pick up the 10.66.0.x lease straight away.
+5. **Vouchers** tab: pick a preset (1 Hour / 3 Hours / 1 Day / 7 Days) or fill in plan name, duration and speeds, then *Generate*. Codes are copyable/shareable straight from the dialog; the list filters by status and each row can be expired or deleted.
+6. **Users** tab: everyone currently on the LAN (online *with* a voucher vs *waiting at the portal*), saved user profiles - a name/phone/note per device MAC, recorded automatically the first time a device is seen - and session history.
+7. **Settings** tab: hotspot SSID/password, WAN/LAN interface pins (blank = automatic), with a *Detect* button that fills in what the phone currently has.
+8. Check the raw state any time with `su -c 'sh /data/local/tmp/setup_network.sh status'`.
+
+### Updating the app
+
+Every build - local or CI, debug or release - is signed with the one committed
+key `keystore/hotspot-billing.p12`, so a new APK installs as a normal update
+over any earlier one (Android only ever refused before because CI-signed debug
+APKs get a fresh random key on every runner).
+
+**One exception, one time only:** builds made before this key existed are signed
+differently, so the very next install needs a single uninstall first. After that,
+updates replace in place forever - no uninstall/reinstall, and vouchers and
+profiles survive because the update keeps the app's data.
 
 ### How the gate works
 
@@ -91,12 +100,18 @@ Requests, or just let the prune job do the work.
 
 ## Status
 
-Working: voucher redemption, single-device binding, static IP assignment, per-plan shaping
-in both directions, captive-portal probes for Android/iOS/Windows.
+Working: voucher generation and management from the admin UI, voucher redemption,
+single-device binding, static IP assignment, per-plan shaping in both directions,
+captive-portal probes for Android/iOS/Windows, foreground service that survives the
+app being swiped away, auto-restart after reboot, expiry sweep, user profiles
+auto-recorded per device MAC, and an event log that surfaces every root command.
 
-Not built yet — see [AUDIT.md §7](AUDIT.md#7-still-open). The important ones: no foreground
-service (the portal currently dies with the activity), no admin UI to mint vouchers, no
-scheduled expiry sweep, no per-session byte accounting.
+Hotspot bring-up: automatic on Android 12+; on Android 9/10 it waits for the OS
+hotspot toggle and configures itself the moment the interface appears (see Deploy).
+
+Not built yet — see [AUDIT.md §7](AUDIT.md#7-still-open). The important remaining ones:
+no per-session byte accounting, portal traffic is plaintext HTTP on the LAN, and no
+rate limit on `/redeem`.
 
 <!-- BEGIN GENERATED: pr-log -->
 ### Pull requests

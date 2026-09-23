@@ -1,83 +1,632 @@
 package com.hotspot.billing
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.text.InputType
+import android.view.View
+import android.widget.Button
+import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import androidx.recyclerview.widget.LinearLayoutManager
 import com.hotspot.billing.db.AppDatabase
+import com.hotspot.billing.db.DeviceProfile
+import com.hotspot.billing.db.UserSession
+import com.hotspot.billing.db.Voucher
+import com.hotspot.billing.db.VoucherStatus
+import com.hotspot.billing.net.LeaseParser
+import com.hotspot.billing.net.SoftApController
 import com.hotspot.billing.net.VoucherManager
-import com.hotspot.billing.portal.CaptivePortalServer
+import com.hotspot.billing.ui.ClientAdapter
+import com.hotspot.billing.ui.ClientRow
+import com.hotspot.billing.ui.ProfileAdapter
+import com.hotspot.billing.ui.SessionAdapter
+import com.hotspot.billing.ui.VoucherAdapter
 import com.hotspot.billing.util.RootShell
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
+/**
+ * The admin console: dashboard (state + event log), voucher minting/management,
+ * connected users + saved device profiles + session history, and settings.
+ * All gateway work happens in [HotspotService]; this activity only renders and
+ * issues commands to it.
+ */
 class MainActivity : AppCompatActivity() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private lateinit var voucherManager: VoucherManager
-    private var portalServer: CaptivePortalServer? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val db by lazy { AppDatabase.get(this) }
+    private val voucherManager by lazy { VoucherManager(db) }
+    private val prefs by lazy { getSharedPreferences(HotspotService.PREFS, Context.MODE_PRIVATE) }
 
-    @Volatile
-    private var shuttingDown = false
+    private var svc: HotspotService? = null
+    private var bound = false
+
+    private lateinit var tabs: List<TextView>
+    private lateinit var sections: List<View>
+
+    // Dashboard
+    private lateinit var dashRoot: TextView
+    private lateinit var dashAp: TextView
+    private lateinit var dashWan: TextView
+    private lateinit var dashLan: TextView
+    private lateinit var dashPortal: TextView
+    private lateinit var dashClients: TextView
+    private lateinit var dashVouchers: TextView
+    private lateinit var dashHint: TextView
+    private lateinit var dashLog: TextView
+
+    // Vouchers tab
+    private lateinit var etPlan: EditText
+    private lateinit var etCount: EditText
+    private lateinit var etMinutes: EditText
+    private lateinit var etRate: EditText
+    private lateinit var etCeil: EditText
+    private lateinit var filterButtons: Map<Button, VoucherStatus?>
+
+    // Settings tab
+    private lateinit var etSsid: EditText
+    private lateinit var etPass: EditText
+    private lateinit var etWan: EditText
+    private lateinit var etLan: EditText
+    private lateinit var setEnv: TextView
+
+    private lateinit var voucherAdapter: VoucherAdapter
+    private lateinit var clientAdapter: ClientAdapter
+    private lateinit var profileAdapter: ProfileAdapter
+    private lateinit var sessionAdapter: SessionAdapter
+
+    // Cached data - main thread only.
+    private var allVouchers: List<Voucher> = emptyList()
+    private var profiles: List<DeviceProfile> = emptyList()
+    private var leases: List<LeaseParser.Lease> = emptyList()
+    private var envText = ""
+    private var voucherFilter: VoucherStatus? = null
+
+    private val handler = Handler(Looper.getMainLooper())
+    private var pollCount = 0
+
+    private val poller = object : Runnable {
+        override fun run() {
+            if (isFinishing || isDestroyed) return
+            pollCount++
+            renderDashboard()
+            refreshData(heavy = pollCount % 2 == 0)
+            handler.postDelayed(this, 1500)
+        }
+    }
+
+    private val connection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            svc = (service as? HotspotService.LocalBinder)?.service()
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            svc = null
+        }
+    }
+
+    // ---------------------------------------------------------------- lifecycle
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        val db = AppDatabase.get(this)
-        voucherManager = VoucherManager(db)
+        wireTabs()
+        wireDashboard()
+        wireVouchers()
+        wireUsers()
+        wireSettings()
+        loadSettingsIntoFields()
+        requestNotificationPermissionIfNeeded()
 
-        scope.launch {
-            // 1. Root has to exist before anything else - every other step shells out.
-            if (!RootShell.isRootAvailable()) {
-                status("Root not granted. Open Magisk and allow this app, then relaunch.")
-                return@launch
-            }
+        // The gateway starts with the app and survives it being swiped away.
+        startForegroundService(
+            Intent(this, HotspotService::class.java).setAction(HotspotService.ACTION_START)
+        )
+        bindService(Intent(this, HotspotService::class.java), connection, Context.BIND_AUTO_CREATE)
 
-            // 2. Copy the bundled shell scripts to /data/local/tmp.
-            status("Deploying network scripts...")
-            deployScripts()
-
-            // 3. Bring up NAT / iptables / dnsmasq, then the shaper.
-            status("Starting NAT, DHCP and firewall...")
-            RootShell.startNetwork()
-            RootShell.initBandwidth()
-
-            // 4. Start the captive portal HTTP server.
-            val server = CaptivePortalServer(voucherManager)
-            server.start()
-            if (shuttingDown) {
-                // onDestroy ran while we were starting - don't leak the socket.
-                server.stop()
-                return@launch
-            }
-            portalServer = server
-            status("Captive portal listening on ${CaptivePortalServer.GATEWAY_IP}:${CaptivePortalServer.PORT}")
-        }
-    }
-
-    private fun deployScripts() {
-        for (name in listOf("setup_network.sh", "bandwidth_control.sh")) {
-            val tmpLocal = java.io.File(cacheDir, name)
-            assets.open(name).use { input ->
-                tmpLocal.outputStream().use { output -> input.copyTo(output) }
-            }
-            RootShell.run("cp ${tmpLocal.absolutePath} /data/local/tmp/$name && chmod 755 /data/local/tmp/$name")
-        }
-    }
-
-    private fun status(message: String) = runOnUiThread {
-        findViewById<TextView>(R.id.status_text)?.text = message
+        handler.post(poller)
     }
 
     override fun onDestroy() {
-        shuttingDown = true
+        handler.removeCallbacks(poller)
+        if (bound) {
+            unbindService(connection)
+            bound = false
+        }
         scope.cancel()
-        portalServer?.stop()
-        portalServer = null
-        RootShell.stopNetwork()
         super.onDestroy()
+    }
+
+    // ---------------------------------------------------------------- tabs
+
+    private fun wireTabs() {
+        tabs = listOf(
+            findViewById(R.id.tab_dashboard),
+            findViewById(R.id.tab_vouchers),
+            findViewById(R.id.tab_users),
+            findViewById(R.id.tab_settings)
+        )
+        sections = listOf(
+            findViewById<View>(R.id.section_dashboard),
+            findViewById<View>(R.id.section_vouchers),
+            findViewById<View>(R.id.section_users),
+            findViewById<View>(R.id.section_settings)
+        )
+        tabs.forEachIndexed { index, tab -> tab.setOnClickListener { selectTab(index) } }
+        selectTab(0)
+    }
+
+    private fun selectTab(index: Int) {
+        sections.forEachIndexed { i, section ->
+            section.visibility = if (i == index) View.VISIBLE else View.GONE
+        }
+        tabs.forEachIndexed { i, tab ->
+            tab.setTextColor(
+                ContextCompat.getColor(this, if (i == index) R.color.accent else R.color.textDim)
+            )
+            tab.setBackgroundColor(
+                ContextCompat.getColor(this, if (i == index) R.color.chip else android.R.color.transparent)
+            )
+        }
+    }
+
+    // ---------------------------------------------------------------- dashboard
+
+    private fun wireDashboard() {
+        dashRoot = findViewById(R.id.dash_root)
+        dashAp = findViewById(R.id.dash_ap)
+        dashWan = findViewById(R.id.dash_wan)
+        dashLan = findViewById(R.id.dash_lan)
+        dashPortal = findViewById(R.id.dash_portal)
+        dashClients = findViewById(R.id.dash_clients)
+        dashVouchers = findViewById(R.id.dash_vouchers)
+        dashHint = findViewById(R.id.dash_hint)
+        dashLog = findViewById(R.id.dash_log)
+
+        findViewById<Button>(R.id.btn_start).setOnClickListener {
+            withService { it.startSequence() }
+        }
+        findViewById<Button>(R.id.btn_stop).setOnClickListener {
+            withService { it.stopSequence() }
+        }
+        findViewById<Button>(R.id.btn_open_tether).setOnClickListener { openTetherSettings() }
+    }
+
+    private fun renderDashboard() {
+        val state = svc?.state
+        if (state == null) {
+            dashRoot.text = "..."
+            dashAp.text = "service starting..."
+            return
+        }
+
+        dashRoot.text = when (state.rootOk) {
+            null -> "checking..."
+            true -> "granted"
+            false -> "NOT granted - allow in Magisk"
+        }
+
+        dashAp.text = when (state.phase) {
+            HotspotService.Phase.STARTING -> "starting..."
+            HotspotService.Phase.WAITING_AP -> "OFF - switch it on (see below)"
+            HotspotService.Phase.RUNNING -> "running"
+            HotspotService.Phase.STOPPED -> "stopped"
+            HotspotService.Phase.ERROR -> "error"
+        }
+
+        dashWan.text = state.wanIf ?: "-"
+        dashLan.text = state.lanIf ?: "-"
+        dashPortal.text = if (state.portalRunning) "http://10.66.0.1:8080" else "not running"
+        dashHint.visibility =
+            if (state.phase == HotspotService.Phase.WAITING_AP) View.VISIBLE else View.GONE
+
+        dashLog.text = svc?.dumpLog()?.joinToString("\n")?.ifBlank { "(no events yet)" }
+            ?: "(no events yet)"
+    }
+
+    // ---------------------------------------------------------------- vouchers
+
+    private fun wireVouchers() {
+        etPlan = findViewById(R.id.gen_plan)
+        etCount = findViewById(R.id.gen_count)
+        etMinutes = findViewById(R.id.gen_minutes)
+        etRate = findViewById(R.id.gen_rate)
+        etCeil = findViewById(R.id.gen_ceil)
+
+        val presets = mapOf(
+            R.id.preset_1h to ("1 Hour - 2Mbps" to Triple(60, 2048, 4096)),
+            R.id.preset_3h to ("3 Hours - 4Mbps" to Triple(180, 4096, 8192)),
+            R.id.preset_24h to ("1 Day - 8Mbps" to Triple(1440, 8192, 16384)),
+            R.id.preset_7d to ("7 Days - 10Mbps" to Triple(10080, 10240, 20480))
+        )
+        presets.forEach { (id, spec) ->
+            findViewById<Button>(id).setOnClickListener {
+                etPlan.setText(spec.first)
+                etMinutes.setText(spec.second.first.toString())
+                etRate.setText(spec.second.second.toString())
+                etCeil.setText(spec.second.third.toString())
+            }
+        }
+
+        filterButtons = mapOf(
+            findViewById<Button>(R.id.filter_all) to null,
+            findViewById<Button>(R.id.filter_unused) to VoucherStatus.UNUSED,
+            findViewById<Button>(R.id.filter_active) to VoucherStatus.ACTIVE,
+            findViewById<Button>(R.id.filter_expired) to VoucherStatus.EXPIRED
+        )
+        filterButtons.forEach { (button, status) ->
+            button.setOnClickListener { setFilter(status) }
+        }
+
+        voucherAdapter = VoucherAdapter(
+            onCopy = { copyText(it.code); toast("Copied ${it.code}") },
+            onShare = { shareText(it.code) },
+            onExpire = { voucher ->
+                confirm(
+                    "Expire ${voucher.code}?",
+                    "The device using it is kicked off the internet immediately."
+                ) {
+                    scope.launch {
+                        withContext(Dispatchers.IO) { voucherManager.forceExpire(voucher.code) }
+                        refreshData(false)
+                    }
+                }
+            },
+            onDelete = { voucher ->
+                confirm(
+                    "Delete ${voucher.code}?",
+                    "It disappears from the list permanently."
+                ) {
+                    scope.launch {
+                        withContext(Dispatchers.IO) { voucherManager.deleteVoucher(voucher.code) }
+                        refreshData(false)
+                    }
+                }
+            }
+        )
+        findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.voucher_list).apply {
+            layoutManager = LinearLayoutManager(this@MainActivity)
+            adapter = voucherAdapter
+        }
+
+        findViewById<Button>(R.id.btn_generate).setOnClickListener { generateVouchers() }
+        setFilter(null)
+    }
+
+    private fun generateVouchers() {
+        val count = etCount.text.toString().trim().toIntOrNull()
+        val minutes = etMinutes.text.toString().trim().toIntOrNull()
+        val rate = etRate.text.toString().trim().toIntOrNull()
+        val ceil = etCeil.text.toString().trim().toIntOrNull()
+        val plan = etPlan.text.toString().trim().ifEmpty { "Custom plan" }
+
+        if (count == null || count < 1 || minutes == null || minutes < 1 ||
+            rate == null || rate < 64 || ceil == null || ceil < rate
+        ) {
+            toast("Fill in: how many, minutes, and both speeds (max >= min)")
+            return
+        }
+
+        scope.launch {
+            val codes = withContext(Dispatchers.IO) {
+                voucherManager.generateBatch(count.coerceAtMost(200), plan, minutes, rate, ceil)
+            }
+            showCodesDialog(codes)
+            refreshData(false)
+        }
+    }
+
+    private fun showCodesDialog(codes: List<String>) {
+        val message = codes.joinToString("\n")
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("${codes.size} voucher(s) created")
+            .setMessage(message)
+            .setPositiveButton("Copy all") { d, _ -> copyText(message); toast("Copied"); d.dismiss() }
+            .setNeutralButton("Share") { d, _ -> shareText(message); d.dismiss() }
+            .setNegativeButton("Close", null)
+            .create()
+        dialog.show()
+        dialog.findViewById<TextView>(android.R.id.message)?.setTextIsSelectable(true)
+    }
+
+    private fun setFilter(status: VoucherStatus?) {
+        voucherFilter = status
+        filterButtons.forEach { (button, value) ->
+            button.setTextColor(
+                ContextCompat.getColor(
+                    this,
+                    if (value == status) R.color.accent else R.color.textDim
+                )
+            )
+        }
+        renderVoucherList()
+    }
+
+    // ---------------------------------------------------------------- users
+
+    private fun wireUsers() {
+        clientAdapter = ClientAdapter(
+            onProfile = { row -> showProfileDialog(row.mac, row.label, null, null) },
+            onKick = { row ->
+                val voucher = row.voucher
+                if (voucher != null) {
+                    confirm(
+                        "Kick this device?",
+                        "${row.label ?: row.mac} loses internet now (voucher ${voucher.code} expires)."
+                    ) {
+                        scope.launch {
+                            withContext(Dispatchers.IO) { voucherManager.forceExpire(voucher.code) }
+                            refreshData(false)
+                        }
+                    }
+                }
+            }
+        )
+        profileAdapter = ProfileAdapter(
+            onEdit = { profile ->
+                showProfileDialog(profile.mac, profile.label, profile.phone, profile.note)
+            },
+            onDelete = { profile ->
+                confirm(
+                    "Delete profile?",
+                    "The saved name/note for ${profile.mac} is removed. Vouchers are not affected."
+                ) {
+                    scope.launch {
+                        withContext(Dispatchers.IO) { db.deviceProfileDao().delete(profile.mac) }
+                        refreshData(false)
+                    }
+                }
+            }
+        )
+        sessionAdapter = SessionAdapter()
+
+        findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.client_list).apply {
+            layoutManager = LinearLayoutManager(this@MainActivity)
+            adapter = clientAdapter
+        }
+        findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.profile_list).apply {
+            layoutManager = LinearLayoutManager(this@MainActivity)
+            adapter = profileAdapter
+        }
+        findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.session_list).apply {
+            layoutManager = LinearLayoutManager(this@MainActivity)
+            adapter = sessionAdapter
+        }
+    }
+
+    /** Dialog to create/edit the user profile attached to a device MAC. */
+    private fun showProfileDialog(mac: String, label: String?, phone: String?, note: String?) {
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+        }
+        val etLabel = EditText(this).apply {
+            hint = "Name / label (e.g. Ali - Samsung A12)"
+            setText(label ?: "")
+        }
+        val etPhone = EditText(this).apply {
+            hint = "Phone"
+            inputType = InputType.TYPE_CLASS_PHONE
+            setText(phone ?: "")
+        }
+        val etNote = EditText(this).apply {
+            hint = "Note (e.g. regular customer, house 12)"
+            setText(note ?: "")
+        }
+        container.addView(etLabel)
+        container.addView(etPhone)
+        container.addView(etNote)
+
+        AlertDialog.Builder(this)
+            .setTitle("User profile\n$mac")
+            .setView(container)
+            .setPositiveButton("Save") { d, _ ->
+                val newLabel = etLabel.text.toString().trim().ifEmpty { null }
+                val newPhone = etPhone.text.toString().trim().ifEmpty { null }
+                val newNote = etNote.text.toString().trim().ifEmpty { null }
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        val existing = db.deviceProfileDao().findByMac(mac)
+                        db.deviceProfileDao().upsert(
+                            (existing ?: DeviceProfile(mac = mac)).copy(
+                                label = newLabel,
+                                phone = newPhone,
+                                note = newNote,
+                                lastSeen = System.currentTimeMillis()
+                            )
+                        )
+                    }
+                    refreshData(false)
+                }
+                d.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    // ---------------------------------------------------------------- settings
+
+    private fun wireSettings() {
+        etSsid = findViewById(R.id.set_ssid)
+        etPass = findViewById(R.id.set_pass)
+        etWan = findViewById(R.id.set_wan)
+        etLan = findViewById(R.id.set_lan)
+        setEnv = findViewById(R.id.set_env)
+
+        findViewById<Button>(R.id.btn_detect).setOnClickListener {
+            scope.launch {
+                val detected = withContext(Dispatchers.IO) {
+                    Triple(
+                        RootShell.defaultRouteInterface(),
+                        SoftApController.apInterface(null),
+                        RootShell.interfaces()
+                    )
+                }
+                val (wan, lan, all) = detected
+                etWan.setText(wan ?: "")
+                etLan.setText(lan ?: "")
+                toast(
+                    "Internet: ${wan ?: "?"}  ·  Hotspot: ${lan ?: "not detected"}\n" +
+                        "Interfaces up: ${all.filter { it.second }.joinToString { it.first }}"
+                )
+            }
+        }
+
+        findViewById<Button>(R.id.btn_apply).setOnClickListener {
+            prefs.edit()
+                .putString(HotspotService.KEY_SSID, etSsid.text.toString().trim())
+                .putString(HotspotService.KEY_PASS, etPass.text.toString())
+                .putString(HotspotService.KEY_WAN_IF, etWan.text.toString().trim())
+                .putString(HotspotService.KEY_LAN_IF, etLan.text.toString().trim())
+                .apply()
+            toast("Saved - restarting the hotspot")
+            withService { it.restart() }
+        }
+
+        findViewById<Button>(R.id.btn_tether).setOnClickListener { openTetherSettings() }
+        findViewById<Button>(R.id.btn_stop_all).setOnClickListener {
+            withService { it.stopSequence() }
+        }
+    }
+
+    private fun loadSettingsIntoFields() {
+        etSsid.setText(prefs.getString(HotspotService.KEY_SSID, HotspotService.DEFAULT_SSID))
+        etPass.setText(prefs.getString(HotspotService.KEY_PASS, HotspotService.DEFAULT_PASS))
+        etWan.setText(prefs.getString(HotspotService.KEY_WAN_IF, ""))
+        etLan.setText(prefs.getString(HotspotService.KEY_LAN_IF, ""))
+    }
+
+    private fun openTetherSettings() {
+        scope.launch(Dispatchers.IO) {
+            SoftApController.openTetherSettings { }
+        }
+    }
+
+    // ---------------------------------------------------------------- data + rendering
+
+    private fun refreshData(heavy: Boolean) {
+        scope.launch {
+            val vouchers = withContext(Dispatchers.IO) { db.voucherDao().getAll() }
+            val newProfiles = withContext(Dispatchers.IO) { db.deviceProfileDao().getAll() }
+            val sessions = withContext(Dispatchers.IO) { db.sessionDao().getRecent(50) }
+            if (heavy) {
+                leases = withContext(Dispatchers.IO) {
+                    if (svc?.state?.phase == HotspotService.Phase.RUNNING) {
+                        LeaseParser.parse(RootShell.readLeases())
+                    } else {
+                        emptyList()
+                    }
+                }
+                envText = withContext(Dispatchers.IO) { RootShell.readEnvFile() }
+            }
+            allVouchers = vouchers
+            profiles = newProfiles
+            renderDataViews(sessions)
+        }
+    }
+
+    private fun renderDataViews(sessions: List<UserSession>) {
+        val unused = allVouchers.count { it.status == VoucherStatus.UNUSED }
+        val active = allVouchers.count { it.status == VoucherStatus.ACTIVE }
+        val expired = allVouchers.count { it.status == VoucherStatus.EXPIRED }
+        dashVouchers.text = "$unused unused · $active active · $expired expired"
+
+        val activeVouchers = allVouchers.filter { it.status == VoucherStatus.ACTIVE }
+        val withVoucher = leases.count { lease -> activeVouchers.any { it.boundMac == lease.mac } }
+        dashClients.text =
+            if (leases.isEmpty() && activeVouchers.isEmpty()) "-"
+            else "${leases.size} connected · $withVoucher online · ${leases.size - withVoucher} waiting"
+
+        renderVoucherList()
+
+        val rows = leases.map { lease ->
+            ClientRow(
+                mac = lease.mac,
+                ip = lease.ip,
+                hostname = lease.hostname,
+                label = profiles.firstOrNull { it.mac == lease.mac }?.label,
+                voucher = activeVouchers.firstOrNull { it.boundMac == lease.mac }
+            )
+        }
+        clientAdapter.submit(rows)
+
+        profileAdapter.submit(profiles)
+
+        val labels = profiles.associate { profile ->
+            profile.mac to (profile.label ?: profile.hostname ?: profile.mac)
+        }
+        sessionAdapter.submit(sessions, labels)
+
+        setEnv.text = envText.ifBlank { "(not written yet - start the hotspot)" }
+    }
+
+    private fun renderVoucherList() {
+        voucherAdapter.submit(
+            allVouchers.filter { voucherFilter == null || it.status == voucherFilter }
+        )
+    }
+
+    // ---------------------------------------------------------------- helpers
+
+    private fun withService(block: (HotspotService) -> Unit) {
+        val service = svc
+        if (service == null) toast("Gateway is still starting - try again in a second")
+        else block(service)
+    }
+
+    private fun copyText(text: String) {
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText("hotspot", text))
+    }
+
+    private fun shareText(text: String) {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        startActivity(Intent.createChooser(intent, "Share vouchers"))
+    }
+
+    private fun confirm(title: String, message: String, action: () -> Unit) {
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton("Yes") { d, _ -> d.dismiss(); action() }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun toast(message: String) {
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    }
+
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 100)
+        }
     }
 }

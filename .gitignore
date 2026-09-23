@@ -21,5 +21,10 @@ app/src/main/assets/*.sh
 *.keystore
 keystore.properties
 
+# Exception: the shared *release-grade* signing key below IS committed on purpose.
+# Every build (local or CI, debug or release) is signed with it so a new APK
+# always installs as an in-place update over an older one. See app/build.gradle.
+!keystore/hotspot-billing.p12
+
 # --- CI scratch space ---
 .audit/

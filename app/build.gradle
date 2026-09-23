@@ -5,18 +5,31 @@ plugins {
 }
 
 /*
- * Optional release signing. Provide RELEASE_STORE_FILE / RELEASE_STORE_PASSWORD /
- * RELEASE_KEY_ALIAS / RELEASE_KEY_PASSWORD (environment or -P) and the release
- * build is signed; without them Gradle emits an unsigned release APK.
+ * ONE committed signing key for every build, local or CI, debug and release.
+ *
+ * Why: GitHub runners (and every fresh dev machine) generate a *random*
+ * debug.keystore, so two APKs built at different times are signed differently
+ * and Android refuses to update one over the other ("App not installed").
+ * Signing everything with keystore/hotspot-billing.p12 makes every future
+ * build install as a normal update over any earlier one - no uninstall dance.
+ *
+ * Trade-off: anyone who can read this repo can sign APKs Android will accept
+ * as updates of this app. Acceptable for a personal hotspot controller; if
+ * this is ever distributed publicly, move the key to CI secrets instead.
  */
-def releaseStoreFile = System.getenv('RELEASE_STORE_FILE') ?: project.findProperty('RELEASE_STORE_FILE')
-def releaseSigningReady = releaseStoreFile ? file(releaseStoreFile).exists() : false
+def sharedKeystore = rootProject.file('keystore/hotspot-billing.p12')
+if (!sharedKeystore.exists()) {
+    throw new GradleException(
+        "Shared signing keystore missing: ${sharedKeystore}\n" +
+        "It is committed at keystore/hotspot-billing.p12 - restore it with\n" +
+        "'git checkout -- keystore' or see README.md (Updating the app).")
+}
 
 // Resolved eagerly and explicitly: `versionCode (x) as int` parses in Groovy as
 // `(versionCode(x)) as int`, i.e. it calls the setter with a String and then
 // casts the void return - which fails at configuration time.
-def resolvedVersionCode = Integer.parseInt((project.findProperty('appVersionCode') ?: '1').toString())
-def resolvedVersionName = (project.findProperty('appVersionName') ?: '1.0').toString()
+def resolvedVersionCode = Integer.parseInt((project.findProperty('appVersionCode') ?: '2').toString())
+def resolvedVersionName = (project.findProperty('appVersionName') ?: '1.1').toString()
 
 android {
     namespace 'com.hotspot.billing'
@@ -30,9 +43,23 @@ android {
         versionName = resolvedVersionName
     }
 
+    signingConfigs {
+        shared {
+            storeFile = sharedKeystore
+            storeType = 'PKCS12'
+            storePassword = 'rns-hotspot-billing'
+            keyAlias = 'rns-hotspot'
+            keyPassword = 'rns-hotspot-billing'
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig signingConfigs.shared
+        }
         release {
             minifyEnabled false
+            signingConfig signingConfigs.shared
         }
     }
 
@@ -55,16 +82,6 @@ android {
     testOptions {
         unitTests.returnDefaultValues = true
     }
-}
-
-if (releaseSigningReady) {
-    android.signingConfigs.create('release') {
-        storeFile file(releaseStoreFile)
-        storePassword System.getenv('RELEASE_STORE_PASSWORD') ?: project.findProperty('RELEASE_STORE_PASSWORD')
-        keyAlias System.getenv('RELEASE_KEY_ALIAS') ?: project.findProperty('RELEASE_KEY_ALIAS')
-        keyPassword System.getenv('RELEASE_KEY_PASSWORD') ?: project.findProperty('RELEASE_KEY_PASSWORD')
-    }
-    android.buildTypes.getByName('release').signingConfig = android.signingConfigs.getByName('release')
 }
 
 /*
@@ -95,6 +112,7 @@ tasks.matching { it.name == 'preBuild' || (it.name.startsWith('merge') && it.nam
 dependencies {
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.recyclerview:recyclerview:1.3.2'
 
     // Root shell execution
     implementation 'com.github.topjohnwu.libsu:core:5.2.1'
