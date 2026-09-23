@@ -236,9 +236,13 @@ class MainActivity : AppCompatActivity() {
 
         dashWan.text = state.wanIf ?: "-"
         dashLan.text = state.lanIf ?: "-"
-        dashPortal.text = if (state.portalRunning) "http://10.66.0.1:8080" else "not running"
-        dashHint.visibility =
-            if (state.phase == HotspotService.Phase.WAITING_AP) View.VISIBLE else View.GONE
+        dashPortal.text = if (state.portalRunning) {
+            "http://${state.gatewayIp ?: "10.66.0.1"}/"
+        } else {
+            "not running"
+        }
+        dashHint.visibility = if (state.message.isNotBlank()) View.VISIBLE else View.GONE
+        if (state.message.isNotBlank()) dashHint.text = state.message
 
         dashLog.text = svc?.dumpLog()?.joinToString("\n")?.ifBlank { "(no events yet)" }
             ?: "(no events yet)"
@@ -533,12 +537,16 @@ class MainActivity : AppCompatActivity() {
             if (heavy) {
                 leases = withContext(Dispatchers.IO) {
                     if (svc?.state?.phase == HotspotService.Phase.RUNNING) {
-                        LeaseParser.parse(RootShell.readLeases())
+                        RootShell.connectedClients(svc?.state?.lanIf)
                     } else {
                         emptyList()
                     }
                 }
-                envText = withContext(Dispatchers.IO) { RootShell.readEnvFile() }
+                envText = withContext(Dispatchers.IO) {
+                    val env = RootShell.readEnvFile()
+                    val runtime = RootShell.readRuntimeFile().ifBlank { "(runtime not written yet)" }
+                    "$env\n---\n$runtime"
+                }
             }
             allVouchers = vouchers
             profiles = newProfiles

@@ -10,8 +10,13 @@ class IpPoolTest {
 
     @Before
     fun drainPool() {
-        // IpPool is a process-wide singleton; make each test start from empty.
-        (IpPoolTest.START..IpPoolTest.END).forEach { IpPool.release("10.66.0.$it") }
+        // IpPool is a process-wide singleton; make each test start from the
+        // default 10.66.0.0/24 plan and an empty pool.
+        IpPool.configure(LanPlan.DEFAULT)
+        (IpPoolTest.START..IpPoolTest.END).forEach {
+            IpPool.release("10.66.0.$it")
+            IpPool.release("192.168.43.$it")
+        }
     }
 
     @Test
@@ -48,6 +53,24 @@ class IpPoolTest {
     fun `markUsed reserves an address the database already knows about`() {
         IpPool.markUsed("10.66.0.10")
         assertEquals("10.66.0.11", IpPool.allocate())
+    }
+
+    @Test
+    fun `configure follows the subnet Android already assigned`() {
+        IpPool.configure(
+            LanPlan(
+                gateway = "192.168.43.1",
+                prefixLength = 24,
+                subnet = "192.168.43.0/24",
+                dhcpStart = "192.168.43.10",
+                dhcpEnd = "192.168.43.250",
+                portalPort = 8080,
+                dhcpOwner = "android"
+            )
+        )
+        assertEquals("192.168.43.10", IpPool.allocate())
+        assertTrue(IpPool.inStaticPool("192.168.43.10"))
+        assertEquals(false, IpPool.inStaticPool("10.66.0.10"))
     }
 
     private companion object {

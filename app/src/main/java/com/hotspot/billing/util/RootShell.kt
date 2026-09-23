@@ -1,5 +1,7 @@
 package com.hotspot.billing.util
 
+import com.hotspot.billing.net.LanPlan
+import com.hotspot.billing.net.LeaseParser
 import com.topjohnwu.superuser.Shell
 
 /**
@@ -15,6 +17,7 @@ object RootShell {
     private const val SETUP = "$SCRIPT_DIR/setup_network.sh"
     private const val SHAPER = "$SCRIPT_DIR/bandwidth_control.sh"
     private const val ENV_FILE = "$SCRIPT_DIR/hotspot.env"
+    private const val RUNTIME_FILE = "$SCRIPT_DIR/hotspot.runtime"
 
     private val MAC_REGEX = Regex("^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$")
     private val IP_REGEX = Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")
@@ -28,12 +31,17 @@ object RootShell {
 
     fun stopNetwork(): Shell.Result = run("sh $SETUP stop")
 
+    /** Re-assert DHCP without flushing the hotspot address. Safe to call often. */
+    fun keepaliveNetwork(): Shell.Result = run("sh $SETUP keepalive")
+
     fun networkStatus(): List<String> = run("sh $SETUP status").out
 
-    fun authorizeMac(mac: String, ip: String): Shell.Result {
+    fun authorizeMac(mac: String, ip: String, currentIp: String? = null): Shell.Result {
         require(mac.matches(MAC_REGEX)) { "not a MAC address: $mac" }
         require(ip.matches(IP_REGEX)) { "not an IPv4 address: $ip" }
-        return run("sh $SETUP authorize $mac $ip")
+        val extra = currentIp?.takeIf { it.matches(IP_REGEX) && it != ip }
+        return if (extra != null) run("sh $SETUP authorize $mac $ip $extra")
+        else run("sh $SETUP authorize $mac $ip")
     }
 
     fun deauthorizeMac(mac: String): Shell.Result {
@@ -53,8 +61,32 @@ object RootShell {
         return run("sh $SETUP unreserve $mac")
     }
 
-    /** Current dnsmasq leases: "<expiry> <mac> <ip> <hostname> <clientid>" per line. */
-    fun readLeases(): List<String> = run("cat $SCRIPT_DIR/dnsmasq.leases").out
+    /**
+     * DHCP leases from our dnsmasq and, if Android is still the DHCP server,
+     * from its lease file too. "<expiry> <mac> <ip> <hostname> <clientid>".
+     */
+    fun readLeases(): List<String> = run(
+        "cat $SCRIPT_DIR/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases " +
+            "/data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null"
+    ).out
+
+    /**
+     * Devices currently on the LAN: lease file first (has the hostname), then
+     * ARP for anyone who has an address but is not in a lease file we can read.
+     */
+    fun connectedClients(lanIf: String?): List<LeaseParser.Lease> {
+        val arp = run("cat /proc/net/arp 2>/dev/null").out
+        return LeaseParser.merge(
+            LeaseParser.parse(readLeases()),
+            LeaseParser.fromArp(arp, lanIf)
+        )
+    }
+
+    /** Gateway, subnet and who is serving DHCP, as written by setup_network.sh. */
+    fun readLanPlan(): LanPlan? = LanPlan.parse(readRuntimeFile())
+
+    fun readRuntimeFile(): String =
+        run("cat $RUNTIME_FILE 2>/dev/null").out.joinToString("\n")
 
     fun isDnsmasqRunning(): Boolean {
         val pid = run("cat $SCRIPT_DIR/dnsmasq_hotspot.pid").out
@@ -81,6 +113,10 @@ object RootShell {
         require(ip.matches(IP_REGEX)) { "not an IPv4 address: $ip" }
         return run("sh $SHAPER remove $ip $classId")
     }
+
+    /** Drops a tc class by id, whichever client IP it was attached to. */
+    fun removeBandwidthByClass(classId: Int): Shell.Result =
+        run("sh $SHAPER remove-class $classId")
 
     // --- environment / device introspection -------------------------------------
 

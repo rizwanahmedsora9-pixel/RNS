@@ -115,6 +115,25 @@ remove() {
     log "removed $IP"
 }
 
+# Drop every class with this id, whichever IP it was attached to. Used to clear
+# the transitional cap on the address a client still holds after a voucher ends.
+remove_class() {
+    CID="$1"
+    [ -n "$CID" ] || { echo "usage: $0 remove-class <class_id>"; return 1; }
+    TMP="${STATE_FILE}.tmp.$$"
+    : > "$TMP"
+    if [ -f "$STATE_FILE" ]; then
+        while read -r IP C RATE CEIL; do
+            [ -n "$IP" ] || continue
+            [ "$C" = "$CID" ] && continue
+            echo "$IP $C $RATE $CEIL" >> "$TMP"
+        done < "$STATE_FILE"
+    fi
+    mv "$TMP" "$STATE_FILE"
+    rebuild
+    log "removed class 1:$CID"
+}
+
 list() {
     echo "interface: $LAN_IF"
     echo "-- state --"
@@ -128,8 +147,9 @@ list() {
 case "${1:-}" in
     init)   init ;;
     stop)   stop ;;
-    add)    add "${2:-}" "${3:-}" "${4:-}" "${5:-}" ;;
-    remove) remove "${2:-}" "${3:-}" ;;
-    list)   list ;;
-    *) echo "usage: $0 {init|stop|add <ip> <class_id> <rate_kbit> <ceil_kbit>|remove <ip> <class_id>|list}" ;;
+    add)          add "${2:-}" "${3:-}" "${4:-}" "${5:-}" ;;
+    remove)       remove "${2:-}" "${3:-}" ;;
+    remove-class) remove_class "${2:-}" ;;
+    list)         list ;;
+    *) echo "usage: $0 {init|stop|add <ip> <class_id> <rate_kbit> <ceil_kbit>|remove <ip> <class_id>|remove-class <class_id>|list}" ;;
 esac
