@@ -1,0 +1,940 @@
+=== RNS hotspot gateway - event log ===
+exported  : 2026-09-24 12:44:20.402
+device    : INFINIX MOBILITY LIMITED Infinix X650C / Android 9 (API 28)
+phase     : RUNNING
+ap        : WiFi Direct group (NetShare) mode=WiFi Direct group (NetShare) ssid=DIRECT-5O-Infinix HOT 8
+lan/wan   : p2p0 / ccmni0 gateway=192.168.49.1 dhcp=ours
+findings  : none
+records   : 1245 in memory, level I+
+NOTE: press "Full report" for the device/firewall/DHCP dump too.
+----------------------------------------
+2026-09-24 12:37:03.345 +0s I/gateway[main] AppLog started (buffer 6000 lines, file /data/user/0/com.hotspot.billing/files/logs/applog.txt)
+2026-09-24 12:37:03.360 +0s I/gateway[main] process started: pid=10684 INFINIX MOBILITY LIMITED Infinix X650C Android 9 (API 28) app 1.0.27+f35d949
+2026-09-24 12:37:04.253 +0s I/ui[main] requesting permissions: android.permission.ACCESS_FINE_LOCATION, android.permission.ACCESS_COARSE_LOCATION
+2026-09-24 12:37:04.860 +1s I/gateway[main] service created (Android 9, API 28, Infinix X650C)
+2026-09-24 12:37:04.862 +1s I/gateway[main] service IDLE - the gateway only starts when the user taps Start (ACTION_START)
+2026-09-24 12:37:04.869 +1s I/gateway[main] service started without an action - staying IDLE (Start is the user's tap)
+2026-09-24 12:37:04.960 +1s I/root[DefaultDispatcher-worker-1] $ cp /data/user/0/com.hotspot.billing/cache/setup_network.sh /data/local/tmp/setup_network.sh && chmod 755 /data/local/tmp/setup_network.sh
+    |   -> exit 0, 85ms
+2026-09-24 12:37:05.009 +1s I/root[DefaultDispatcher-worker-1] $ cp /data/user/0/com.hotspot.billing/cache/bandwidth_control.sh /data/local/tmp/bandwidth_control.sh && chmod 755 /data/local/tmp/bandwidth_control.sh
+    |   -> exit 0, 37ms
+2026-09-24 12:37:05.060 +1s I/root[DefaultDispatcher-worker-1] $ cp /data/user/0/com.hotspot.billing/cache/netshare_ap.sh /data/local/tmp/netshare_ap.sh && chmod 755 /data/local/tmp/netshare_ap.sh
+    |   -> exit 0, 33ms
+2026-09-24 12:37:05.069 +1s I/root[DefaultDispatcher-worker-1] root shell available (uid 0)
+2026-09-24 12:37:05.071 +1s I/gateway[DefaultDispatcher-worker-1] service idle check: root=true
+2026-09-24 12:37:07.843 +4s I/ui[main] permission result: [(ACCESS_FINE_LOCATION, true), (ACCESS_COARSE_LOCATION, true)]
+2026-09-24 12:37:09.572 +6s I/gateway[main] user pressed Start (ACTION_START)
+2026-09-24 12:37:09.590 +6s I/root[DefaultDispatcher-worker-3] root shell available (uid 0)
+2026-09-24 12:37:09.591 +6s I/gateway[DefaultDispatcher-worker-3] root granted
+2026-09-24 12:37:09.602 +6s I/gateway[DefaultDispatcher-worker-3] deploying network scripts
+2026-09-24 12:37:09.652 +6s I/root[DefaultDispatcher-worker-3] $ cp /data/user/0/com.hotspot.billing/cache/setup_network.sh /data/local/tmp/setup_network.sh && chmod 755 /data/local/tmp/setup_network.sh
+    |   -> exit 0, 46ms
+2026-09-24 12:37:09.714 +6s I/root[DefaultDispatcher-worker-3] $ cp /data/user/0/com.hotspot.billing/cache/bandwidth_control.sh /data/local/tmp/bandwidth_control.sh && chmod 755 /data/local/tmp/bandwidth_control.sh
+    |   -> exit 0, 59ms
+2026-09-24 12:37:09.761 +6s I/root[DefaultDispatcher-worker-3] $ cp /data/user/0/com.hotspot.billing/cache/netshare_ap.sh /data/local/tmp/netshare_ap.sh && chmod 755 /data/local/tmp/netshare_ap.sh
+    |   -> exit 0, 43ms
+2026-09-24 12:37:09.766 +6s I/logcat[DefaultDispatcher-worker-3] starting: su -c "logcat -v threadtime -b main -b system -b crash wifi:V WifiService:V WifiNative:V WifiVendorHal:V SupplicantStaIfaceHal:V wpa_supplicant:V hostapd:V SoftApManager:V WifiApConfigStore:V Tethering:V WifiTethering:V IpServer:V IpClient:V DhcpServer:V dhcpcd:V dnsmasq:V WifiP2pService:V WifiP2pManager:V p2p_supplicant:V NetworkManagementService:V ConnectivityService:V NetworkAssistant:V netd:V NetworkStats:V EthernetTracker:V hotspot.billing:V AndroidRuntime:V System.err:V *:S"
+2026-09-24 12:37:09.779 +6s I/gateway[DefaultDispatcher-worker-3] logcat watcher: WiFi / network tags (rooted - full system log)
+2026-09-24 12:37:09.807 +6s I/billing[DefaultDispatcher-worker-3] billing: seeded 5 default plans
+2026-09-24 12:37:09.811 +6s I/gateway[DefaultDispatcher-worker-3] network: START requested ssid=RNS-Hotspot
+2026-09-24 12:37:09.812 +6s I/gateway[DefaultDispatcher-worker-3] network: step 1/6 detecting WAN
+2026-09-24 12:37:09.828 +6s I/logcat[logcat-reader] --------- beginning of system
+2026-09-24 12:37:09.885 +6s E/logcat:WifiP2pService[logcat-reader] 09-24 12:28:49.475  2163  2268 E WifiP2pService: Unhandled message { when=-192ms what=131203 target=com.android.internal.util.StateMachine$SmHandler }
+2026-09-24 12:37:09.892 +6s E/logcat:WifiP2pService[logcat-reader] 09-24 12:28:49.476  2163  2268 E WifiP2pService: Unhandled message { when=-175ms what=131203 target=com.android.internal.util.StateMachine$SmHandler }
+2026-09-24 12:37:09.893 +6s I/network[DefaultDispatcher-worker-3] wan: detected WanInfo(interfaceName=ccmni0, type=MOBILE, hasInternet=true, ipAddress=10.37.78.54, dns1=119.160.112.48, dns2=119.160.80.146)
+2026-09-24 12:37:09.894 +6s I/gateway[DefaultDispatcher-worker-3] network: WAN = ccmni0 (MOBILE) hasInternet=true
+2026-09-24 12:37:09.895 +6s I/gateway[DefaultDispatcher-worker-3] network: step 2/6 creating LAN AP (WiFi Direct group owner)
+2026-09-24 12:37:09.896 +6s I/gateway[DefaultDispatcher-worker-3] ap: method = WiFi Direct group owner (the only method)
+2026-09-24 12:37:09.903 +6s I/gateway[DefaultDispatcher-worker-3] ap: WiFi is already on
+2026-09-24 12:37:09.950 +6s I/gateway[DefaultDispatcher-worker-3] ap: location_mode=3 (0=off; WiFi Direct stays disabled while it is off)
+2026-09-24 12:37:09.957 +6s I/gateway[DefaultDispatcher-worker-3] ap[p2p]: WiFi Direct enabled
+2026-09-24 12:37:09.967 +6s I/gateway[DefaultDispatcher-worker-3] ap[p2p]: leftover group present ("DIRECT-5O-Infinix HOT 8", owner=true) - removing before createGroup
+2026-09-24 12:37:09.969 +6s I/logcat[logcat-reader] --------- beginning of main
+2026-09-24 12:37:09.970 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:26.870  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:37:09.972 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:26.870  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:37:09.974 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:26.870  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:37:09.976 +6s I/ap[main] p2p: removeGroup confirmed
+2026-09-24 12:37:09.976 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:26.870  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:37:09.978 +6s I/gateway[DefaultDispatcher-worker-3] ap[p2p]: removeGroup confirmed
+2026-09-24 12:37:09.978 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:26.870  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:37:09.980 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:36.873  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:37:09.982 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:36.873  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:37:09.984 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:36.873  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:37:09.985 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:36.873  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:37:09.987 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:36.873  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:37:09.989 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:46.847  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:37:09.991 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:46.847  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:37:09.993 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:46.847  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:37:09.995 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:46.847  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:37:09.996 +6s I/gateway[main] system broadcast: WiFi Direct -> DISCONNECTED connected=false
+2026-09-24 12:37:09.997 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:46.847  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:37:09.998 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:46.875  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:37:10.000 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:46.876  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:37:10.001 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:46.876  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:37:10.003 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:46.876  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:37:10.005 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:46.876  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:37:10.008 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:51.624  2163  2191 W System.err: java.lang.NullPointerException: Attempt to invoke virtual method 'java.lang.String android.content.ComponentName.getPackageName()' on a null object reference
+2026-09-24 12:37:10.010 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:51.624  2163  2191 W System.err: 	at com.transsion.processmanager.controller.SmartCleanManager.J(Unknown Source:5286)
+2026-09-24 12:37:10.012 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:51.624  2163  2191 W System.err: 	at com.transsion.processmanager.controller.SmartCleanManager.b(Unknown Source:2029)
+2026-09-24 12:37:10.013 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:51.624  2163  2191 W System.err: 	at com.transsion.processmanager.controller.SmartCleanManager.v(Unknown Source:2007)
+2026-09-24 12:37:10.015 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:51.624  2163  2191 W System.err: 	at com.transsion.processmanager.controller.SmartCleanManager.m(Unknown Source:69)
+2026-09-24 12:37:10.017 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:51.624  2163  2191 W System.err: 	at com.transsion.processmanager.controller.t.handleMessage(Unknown Source:1454)
+2026-09-24 12:37:10.019 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:51.624  2163  2191 W System.err: 	at android.os.Handler.dispatchMessage(Handler.java:106)
+2026-09-24 12:37:10.021 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:51.624  2163  2191 W System.err: 	at android.os.Looper.loop(Looper.java:193)
+2026-09-24 12:37:10.023 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:51.624  2163  2191 W System.err: 	at android.os.HandlerThread.run(HandlerThread.java:65)
+2026-09-24 12:37:10.025 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:56.879  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:37:10.027 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:56.879  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:37:10.030 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:56.879  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:37:10.031 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:56.879  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:37:10.034 +6s W/logcat:System.err[logcat-reader] 09-24 12:36:56.879  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:37:10.036 +6s W/logcat:System.err[logcat-reader] 09-24 12:37:00.001  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:37:10.038 +6s W/logcat:System.err[logcat-reader] 09-24 12:37:00.001  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:37:10.040 +6s W/logcat:System.err[logcat-reader] 09-24 12:37:00.001  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:37:10.042 +6s W/logcat:System.err[logcat-reader] 09-24 12:37:00.001  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:37:10.043 +6s W/logcat:System.err[logcat-reader] 09-24 12:37:00.001  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:37:10.046 +6s W/logcat:System.err[logcat-reader] 09-24 12:37:06.884  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:37:10.047 +6s W/logcat:System.err[logcat-reader] 09-24 12:37:06.884  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:37:10.049 +6s W/logcat:System.err[logcat-reader] 09-24 12:37:06.884  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:37:10.051 +6s W/logcat:System.err[logcat-reader] 09-24 12:37:06.884  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:37:10.053 +6s W/logcat:System.err[logcat-reader] 09-24 12:37:06.884  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:37:10.070 +6s I/logcat:wpa_supplicant[logcat-reader] 09-24 12:37:09.972  6804  6804 I wpa_supplicant: P2P-GROUP-REMOVED p2p0 GO reason=REQUESTED
+2026-09-24 12:37:10.072 +6s I/logcat:wpa_supplicant[logcat-reader] 09-24 12:37:09.973  6804  6804 I wpa_supplicant: p2p0: interface state ENABLED->DISABLED
+2026-09-24 12:37:10.073 +6s I/logcat:wpa_supplicant[logcat-reader] 09-24 12:37:09.973  6804  6804 I wpa_supplicant: p2p0: AP-DISABLED 
+2026-09-24 12:37:10.075 +6s I/logcat:EthernetTracker[logcat-reader] 09-24 12:37:09.974  2163  2188 I EthernetTracker: interfaceLinkStateChanged, iface: p2p0, up: true
+2026-09-24 12:37:10.076 +6s I/logcat:wpa_supplicant[logcat-reader] 09-24 12:37:09.974  6804  6804 I wpa_supplicant: p2p0: CTRL-EVENT-DISCONNECTED bssid=02:08:22:28:f5:fc reason=3 locally_generated=1
+2026-09-24 12:37:10.983 +7s I/gateway[DefaultDispatcher-worker-3] ap[p2p]: requestGroupInfo returned null (no group visible)
+2026-09-24 12:37:10.984 +7s I/gateway[DefaultDispatcher-worker-3] ap[p2p]: P2P state confirmed clean - no group
+2026-09-24 12:37:11.041 +7s I/gateway[DefaultDispatcher-worker-3] ap[p2p]: could not set networkName (NoSuchFieldException) - Android picks it; read back afterwards
+2026-09-24 12:37:11.043 +7s I/gateway[DefaultDispatcher-worker-3] ap[p2p]: could not set passphrase (NoSuchFieldException) - Android picks it; read back afterwards
+2026-09-24 12:37:11.044 +7s I/gateway[DefaultDispatcher-worker-3] ap[p2p]: creating WiFi Direct group "DIRECT-RNSHotspot" (own name/password)
+2026-09-24 12:37:11.047 +7s I/ap[DefaultDispatcher-worker-3] p2p: no createGroup(config) on this build (NoSuchMethodException) - Android picks the name and password; they will be read back and shown
+2026-09-24 12:37:11.057 +7s E/logcat:wpa_supplicant[logcat-reader] 09-24 12:37:11.053  6804  6804 E wpa_supplicant: Using interface p2p0 with hwaddr 02:08:22:28:f5:fc and ssid "DIRECT-5O-Infinix HOT 8"
+2026-09-24 12:37:11.065 +7s I/logcat:wpa_supplicant[logcat-reader] 09-24 12:37:11.059  6804  6804 I wpa_supplicant: p2p0: interface state UNINITIALIZED->ENABLED
+2026-09-24 12:37:11.067 +7s I/logcat:wpa_supplicant[logcat-reader] 09-24 12:37:11.060  6804  6804 I wpa_supplicant: p2p0: AP-ENABLED 
+2026-09-24 12:37:11.072 +7s I/logcat:wpa_supplicant[logcat-reader] 09-24 12:37:11.060  6804  6804 I wpa_supplicant: p2p0: CTRL-EVENT-CONNECTED - Connection to 02:08:22:28:f5:fc completed [id=6 id_str=]
+2026-09-24 12:37:11.075 +7s I/logcat:wpa_supplicant[logcat-reader] 09-24 12:37:11.060  6804  6804 I wpa_supplicant: P2P-GROUP-STARTED p2p0 GO ssid="DIRECT-5O-Infinix HOT 8" freq=5745 go_dev_addr=02:08:22:28:f5:fc [PERSISTENT]
+2026-09-24 12:37:11.078 +7s I/logcat:EthernetTracker[logcat-reader] 09-24 12:37:11.062  2163  2188 I EthernetTracker: interfaceLinkStateChanged, iface: p2p0, up: true
+2026-09-24 12:37:11.135 +7s W/logcat:dnsmasq[logcat-reader] 09-24 12:37:11.128 11034 11034 W dnsmasq : type=1400 audit(0.0:731): avc: denied { getattr } for path="pipe:[35509]" dev="pipefs" ino=35509 scontext=u:r:dnsmasq:s0 tcontext=u:r:netd:s0 tclass=fifo_file permissive=0
+2026-09-24 12:37:11.144 +7s E/logcat:dnsmasq[logcat-reader] 09-24 12:37:11.142 11034 11034 E dnsmasq : failed to bind DHCP server socket: Address already in use
+2026-09-24 12:37:11.146 +7s E/logcat:dnsmasq[logcat-reader] 09-24 12:37:11.142 11034 11034 E dnsmasq : FAILED to start up
+2026-09-24 12:37:11.302 +7s I/ap[main] p2p: createGroup accepted
+2026-09-24 12:37:11.305 +7s I/gateway[main] system broadcast: WiFi Direct -> CONNECTED connected=true
+2026-09-24 12:37:11.315 +7s I/gateway[DefaultDispatcher-worker-3] ap[p2p]: group formed - "DIRECT-5O-Infinix HOT 8" / kamm4fFC (group owner confirmed)
+2026-09-24 12:37:11.352 +8s I/gateway[DefaultDispatcher-worker-3] ap[p2p]: group reports interface p2p0
+2026-09-24 12:37:11.354 +8s I/gateway[DefaultDispatcher-worker-3] ap: UP in 1s - Join WiFi "DIRECT-5O-Infinix HOT 8" password "kamm4fFC" - interface p2p0, WiFi Direct group (NetShare)
+2026-09-24 12:37:11.356 +8s I/gateway[DefaultDispatcher-worker-3] network: LAN = p2p0
+2026-09-24 12:37:11.358 +8s I/gateway[DefaultDispatcher-worker-3] network: step 3/6 waiting for address on p2p0
+2026-09-24 12:37:11.383 +8s I/gateway[DefaultDispatcher-worker-3] ap: p2p0 has 192.168.49.1/24
+2026-09-24 12:37:11.386 +8s I/gateway[DefaultDispatcher-worker-3] network: step 4/6 starting DHCP on p2p0
+2026-09-24 12:37:11.388 +8s I/network[DefaultDispatcher-worker-3] dhcp: starting on p2p0 leaveAndroidDhcp=false
+2026-09-24 12:37:16.889 +13s W/logcat:System.err[logcat-reader] 09-24 12:37:16.886  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:37:16.891 +13s W/logcat:System.err[logcat-reader] 09-24 12:37:16.886  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:37:16.893 +13s W/logcat:System.err[logcat-reader] 09-24 12:37:16.886  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:37:16.895 +13s W/logcat:System.err[logcat-reader] 09-24 12:37:16.886  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:37:16.896 +13s W/logcat:System.err[logcat-reader] 09-24 12:37:16.886  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:37:22.068 +18s I/ui[main] opening the debugger from the dashboard
+2026-09-24 12:37:22.425 +19s I/ui[main] debugger opened
+2026-09-24 12:37:25.914 +22s I/root[DefaultDispatcher-worker-3] $ sh /data/local/tmp/setup_network.sh start
+    |   -> exit 0, 823ms
+    |   out: [setup_network] WAN=ccmni1 LAN=p2p0
+    | [setup_network] enabling IP forwarding
+    | [setup_network] adopting existing hotspot address 192.168.49.1/24 (not replacing it)
+    | [setup_network] LAN 192.168.49.1/24 subnet 192.168.49.0/24 dhcp 192.168.49.10-192.168.49.250
+    | [setup_network] NAT: 192.168.49.0/24 -> ccmni1
+    | [setup_network] dnsmasq already running (pid 9557)
+    | [setup_network] start complete (gateway 192.168.49.1, dhcp ours)
+2026-09-24 12:37:26.892 +23s W/logcat:System.err[logcat-reader] 09-24 12:37:26.890  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:37:26.894 +23s W/logcat:System.err[logcat-reader] 09-24 12:37:26.890  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:37:26.895 +23s W/logcat:System.err[logcat-reader] 09-24 12:37:26.890  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:37:26.897 +23s W/logcat:System.err[logcat-reader] 09-24 12:37:26.890  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:37:26.898 +23s W/logcat:System.err[logcat-reader] 09-24 12:37:26.890  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:37:35.741 +32s I/gateway[main] service started without an action - staying IDLE (Start is the user's tap)
+2026-09-24 12:37:36.894 +33s W/logcat:System.err[logcat-reader] 09-24 12:37:36.892  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:37:36.896 +33s W/logcat:System.err[logcat-reader] 09-24 12:37:36.892  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:37:36.897 +33s W/logcat:System.err[logcat-reader] 09-24 12:37:36.892  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:37:36.898 +33s W/logcat:System.err[logcat-reader] 09-24 12:37:36.892  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:37:36.900 +33s W/logcat:System.err[logcat-reader] 09-24 12:37:36.892  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:37:37.095 +33s I/network[DefaultDispatcher-worker-3] dhcp: after start - ourRunning=true foreignRunning=false
+2026-09-24 12:37:37.096 +33s I/network[DefaultDispatcher-worker-3] dhcp: started successfully on p2p0
+2026-09-24 12:37:37.180 +33s I/gateway[DefaultDispatcher-worker-3] network: DHCP config gateway=192.168.49.1 range=192.168.49.10-192.168.49.250
+2026-09-24 12:37:37.181 +33s I/gateway[DefaultDispatcher-worker-3] network: step 5/6 starting DNS
+2026-09-24 12:37:46.864 +43s W/logcat:System.err[logcat-reader] 09-24 12:37:46.856  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:37:46.866 +43s W/logcat:System.err[logcat-reader] 09-24 12:37:46.856  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:37:46.867 +43s W/logcat:System.err[logcat-reader] 09-24 12:37:46.856  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:37:46.871 +43s W/logcat:System.err[logcat-reader] 09-24 12:37:46.856  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:37:46.873 +43s W/logcat:System.err[logcat-reader] 09-24 12:37:46.856  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:37:46.895 +43s W/logcat:System.err[logcat-reader] 09-24 12:37:46.894  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:37:46.898 +43s W/logcat:System.err[logcat-reader] 09-24 12:37:46.894  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:37:46.900 +43s W/logcat:System.err[logcat-reader] 09-24 12:37:46.894  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:37:46.901 +43s W/logcat:System.err[logcat-reader] 09-24 12:37:46.894  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:37:46.902 +43s W/logcat:System.err[logcat-reader] 09-24 12:37:46.894  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:37:48.946 +45s I/logcat:EthernetTracker[logcat-reader] 09-24 12:37:48.944  2163  2188 I EthernetTracker: interfaceLinkStateChanged, iface: wlan0, up: false
+2026-09-24 12:37:52.435 +49s I/gateway[DefaultDispatcher-worker-3] network: DNS running gateway=192.168.49.1 upstream=119.160.112.48,119.160.80.146 foreign=false
+2026-09-24 12:37:52.437 +49s I/gateway[DefaultDispatcher-worker-3] network: step 6/6 enabling NAT WAN=ccmni0 LAN=p2p0
+2026-09-24 12:37:52.467 +49s I/network[DefaultDispatcher-worker-3] nat: enabling WAN=ccmni0 LAN=p2p0 subnet=192.168.49.0/24
+2026-09-24 12:37:52.575 +49s I/root[DefaultDispatcher-worker-3] $ sh /data/local/tmp/setup_network.sh route p2p0 192.168.49.0/24
+    |   -> exit 0, 79ms
+    |   out: [setup_network] ensuring policy routing for p2p0 / 192.168.49.0/24
+    | -- ip rule --
+    | 0:	from all lookup local 
+    | 10000:	from all fwmark 0xc0000/0xd0000 lookup legacy_system 
+    | 10500:	from all iif lo oif ccmni0 uidrange 0-0 lookup ccmni0 
+    | 10500:	from all iif lo oif p2p0 uidrange 0-0 lookup local_network 
+    | 13000:	from all fwmark 0x10063/0x1ffff iif lo lookup local_network 
+    | 13000:	from all fwmark 0x10064/0x1ffff iif lo lookup ccmni0 
+    | 14000:	from all iif lo oif ccmni0 lookup ccmni0 
+    | 14000:	from all iif lo oif p2p0 lookup local_network 
+    | 15000:	from all fwmark 0x0/0x10000 lookup legacy_system 
+    | 15500:	from all iif p2p0 lookup main 
+    | 15501:	from all to 192.168.49.0/24 lookup main 
+    | 16000:	from all fwmark 0x0/0x10000 lookup legacy_network 
+    | 17000:	from all fwmark 0x0/0x10000 lookup local_network 
+    | 19000:	from all fwmark 0x64/0x1ffff iif lo lookup ccmni0 
+    | 22000:	from all fwmark 0x0/0xffff iif lo lookup ccmni0 
+    | 32000:	from all unreachable
+2026-09-24 12:37:52.625 +49s I/network[DefaultDispatcher-worker-3] nat: HS_NAT first=true HS_FWD first=true ip_forward=true
+2026-09-24 12:37:56.904 +53s W/logcat:System.err[logcat-reader] 09-24 12:37:56.900  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:37:56.909 +53s W/logcat:System.err[logcat-reader] 09-24 12:37:56.900  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:37:56.912 +53s W/logcat:System.err[logcat-reader] 09-24 12:37:56.900  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:37:56.916 +53s W/logcat:System.err[logcat-reader] 09-24 12:37:56.900  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:37:56.919 +53s W/logcat:System.err[logcat-reader] 09-24 12:37:56.900  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:38:00.006 +56s W/logcat:System.err[logcat-reader] 09-24 12:38:00.002  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:38:00.012 +56s W/logcat:System.err[logcat-reader] 09-24 12:38:00.002  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:38:00.017 +56s W/logcat:System.err[logcat-reader] 09-24 12:38:00.002  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:38:00.020 +56s W/logcat:System.err[logcat-reader] 09-24 12:38:00.002  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:38:00.022 +56s W/logcat:System.err[logcat-reader] 09-24 12:38:00.002  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:38:06.911 +63s W/logcat:System.err[logcat-reader] 09-24 12:38:06.908  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:38:06.912 +63s W/logcat:System.err[logcat-reader] 09-24 12:38:06.908  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:38:06.914 +63s W/logcat:System.err[logcat-reader] 09-24 12:38:06.908  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:38:06.916 +63s W/logcat:System.err[logcat-reader] 09-24 12:38:06.908  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:38:06.918 +63s W/logcat:System.err[logcat-reader] 09-24 12:38:06.908  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:38:08.150 +64s W/logcat:System.err[logcat-reader] 09-24 12:38:08.148  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:38:08.152 +64s W/logcat:System.err[logcat-reader] 09-24 12:38:08.148  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:38:08.153 +64s W/logcat:System.err[logcat-reader] 09-24 12:38:08.148  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:38:08.155 +64s W/logcat:System.err[logcat-reader] 09-24 12:38:08.148  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:38:08.157 +64s W/logcat:System.err[logcat-reader] 09-24 12:38:08.148  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:38:16.921 +73s W/logcat:System.err[logcat-reader] 09-24 12:38:16.917  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:38:16.926 +73s W/logcat:System.err[logcat-reader] 09-24 12:38:16.917  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:38:16.929 +73s W/logcat:System.err[logcat-reader] 09-24 12:38:16.917  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:38:16.932 +73s W/logcat:System.err[logcat-reader] 09-24 12:38:16.917  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:38:16.936 +73s W/logcat:System.err[logcat-reader] 09-24 12:38:16.918  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:38:21.164 +77s I/ui[main] opening the debugger from the dashboard
+2026-09-24 12:38:21.440 +78s I/ui[main] debugger opened
+2026-09-24 12:38:23.467 +80s I/network[DefaultDispatcher-worker-3] nat: masquerade present=false
+2026-09-24 12:38:23.467 +80s I/gateway[DefaultDispatcher-worker-3] network: testing internet connectivity
+2026-09-24 12:38:24.061 +80s I/network[DefaultDispatcher-worker-3] nat: internet check via ping 8.8.8.8 -> true
+2026-09-24 12:38:24.062 +80s I/gateway[DefaultDispatcher-worker-3] network: START SUCCESS WAN=ccmni0 LAN=p2p0 gateway=192.168.49.1 dhcp=192.168.49.10-192.168.49.250
+2026-09-24 12:38:24.063 +80s I/gateway[DefaultDispatcher-worker-3] network: Join WiFi "DIRECT-5O-Infinix HOT 8" password "kamm4fFC" - interface p2p0, WiFi Direct group (NetShare)
+2026-09-24 12:38:24.160 +80s I/root[DefaultDispatcher-worker-3] $ sh /data/local/tmp/bandwidth_control.sh init
+    |   -> exit 0, 95ms
+    |   out: [bandwidth] initialised on p2p0
+2026-09-24 12:38:24.204 +80s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 19ms
+2026-09-24 12:38:24.208 +80s I/voucher[DefaultDispatcher-worker-3] re-applying 0 active voucher(s) (0 device(s) currently on the LAN)
+2026-09-24 12:38:24.390 +81s I/gateway[DefaultDispatcher-worker-3] captive portal listening on 0.0.0.0:8080 (gateway 192.168.49.1, join card: DIRECT-5O-Infinix HOT 8 / kamm4fFC)
+2026-09-24 12:38:24.396 +81s I/gateway[DefaultDispatcher-worker-3] hotspot session recorded id=1
+2026-09-24 12:38:24.397 +81s I/gateway[DefaultDispatcher-worker-3] gateway running: WAN=ccmni0 LAN=p2p0 gateway=192.168.49.1 - the portal should pop for each new client
+2026-09-24 12:38:26.930 +83s W/logcat:System.err[logcat-reader] 09-24 12:38:26.925  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:38:26.938 +83s W/logcat:System.err[logcat-reader] 09-24 12:38:26.925  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:38:26.942 +83s W/logcat:System.err[logcat-reader] 09-24 12:38:26.926  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:38:26.944 +83s W/logcat:System.err[logcat-reader] 09-24 12:38:26.926  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:38:26.947 +83s W/logcat:System.err[logcat-reader] 09-24 12:38:26.926  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:38:27.784 +84s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 54ms
+2026-09-24 12:38:31.304 +87s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 27ms
+2026-09-24 12:38:36.935 +93s W/logcat:System.err[logcat-reader] 09-24 12:38:36.930  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:38:36.939 +93s W/logcat:System.err[logcat-reader] 09-24 12:38:36.931  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:38:36.942 +93s W/logcat:System.err[logcat-reader] 09-24 12:38:36.931  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:38:36.945 +93s W/logcat:System.err[logcat-reader] 09-24 12:38:36.931  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:38:36.947 +93s W/logcat:System.err[logcat-reader] 09-24 12:38:36.931  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:38:38.102 +94s I/gateway[main] service started without an action - staying IDLE (Start is the user's tap)
+2026-09-24 12:38:44.420 +101s W/root[DefaultDispatcher-worker-10] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 85ms
+2026-09-24 12:38:44.441 +101s W/root[DefaultDispatcher-worker-1] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 85ms
+2026-09-24 12:38:44.462 +101s W/root[DefaultDispatcher-worker-6] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 84ms
+2026-09-24 12:38:46.877 +103s W/logcat:System.err[logcat-reader] 09-24 12:38:46.871  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:38:46.881 +103s W/logcat:System.err[logcat-reader] 09-24 12:38:46.872  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:38:46.883 +103s W/logcat:System.err[logcat-reader] 09-24 12:38:46.872  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:38:46.886 +103s W/logcat:System.err[logcat-reader] 09-24 12:38:46.872  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:38:46.888 +103s W/logcat:System.err[logcat-reader] 09-24 12:38:46.872  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:38:46.940 +103s W/logcat:System.err[logcat-reader] 09-24 12:38:46.936  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:38:46.942 +103s W/logcat:System.err[logcat-reader] 09-24 12:38:46.937  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:38:46.949 +103s W/logcat:System.err[logcat-reader] 09-24 12:38:46.937  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:38:46.952 +103s W/logcat:System.err[logcat-reader] 09-24 12:38:46.942  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:38:46.954 +103s W/logcat:System.err[logcat-reader] 09-24 12:38:46.942  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:38:56.951 +113s W/logcat:System.err[logcat-reader] 09-24 12:38:56.947  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:38:56.953 +113s W/logcat:System.err[logcat-reader] 09-24 12:38:56.947  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:38:56.955 +113s W/logcat:System.err[logcat-reader] 09-24 12:38:56.947  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:38:56.956 +113s W/logcat:System.err[logcat-reader] 09-24 12:38:56.947  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:38:56.958 +113s W/logcat:System.err[logcat-reader] 09-24 12:38:56.947  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:39:00.009 +116s W/logcat:System.err[logcat-reader] 09-24 12:39:00.001  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:39:00.012 +116s W/logcat:System.err[logcat-reader] 09-24 12:39:00.002  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:39:00.020 +116s W/logcat:System.err[logcat-reader] 09-24 12:39:00.002  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:39:00.026 +116s W/logcat:System.err[logcat-reader] 09-24 12:39:00.002  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:39:00.029 +116s W/logcat:System.err[logcat-reader] 09-24 12:39:00.002  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:39:04.635 +121s W/root[DefaultDispatcher-worker-9] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 329ms
+2026-09-24 12:39:04.685 +121s W/root[DefaultDispatcher-worker-5] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 329ms
+2026-09-24 12:39:04.739 +121s W/root[DefaultDispatcher-worker-10] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 336ms
+2026-09-24 12:39:04.855 +121s W/root[DefaultDispatcher-worker-8] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 421ms
+2026-09-24 12:39:04.914 +121s W/root[DefaultDispatcher-worker-4] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 433ms
+2026-09-24 12:39:05.191 +121s W/root[DefaultDispatcher-worker-2] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 392ms
+2026-09-24 12:39:05.693 +122s I/network[DefaultDispatcher-worker-3] fw: health natFirst=true fwdFirst=true healthy=true
+2026-09-24 12:39:06.966 +123s W/logcat:System.err[logcat-reader] 09-24 12:39:06.963  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:39:06.970 +123s W/logcat:System.err[logcat-reader] 09-24 12:39:06.963  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:39:06.972 +123s W/logcat:System.err[logcat-reader] 09-24 12:39:06.963  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:39:06.975 +123s W/logcat:System.err[logcat-reader] 09-24 12:39:06.963  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:39:06.977 +123s W/logcat:System.err[logcat-reader] 09-24 12:39:06.963  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:39:16.975 +133s W/logcat:System.err[logcat-reader] 09-24 12:39:16.970  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:39:16.978 +133s W/logcat:System.err[logcat-reader] 09-24 12:39:16.971  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:39:16.982 +133s W/logcat:System.err[logcat-reader] 09-24 12:39:16.971  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:39:16.984 +133s W/logcat:System.err[logcat-reader] 09-24 12:39:16.971  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:39:16.987 +133s W/logcat:System.err[logcat-reader] 09-24 12:39:16.971  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:39:22.305 +138s I/logcat:EthernetTracker[logcat-reader] 09-24 12:39:22.302  2163  2188 I EthernetTracker: interfaceLinkStateChanged, iface: p2p0, up: true
+2026-09-24 12:39:22.315 +138s I/logcat:wpa_supplicant[logcat-reader] 09-24 12:39:22.312  6804  6804 I wpa_supplicant: p2p0: CTRL-EVENT-SUBNET-STATUS-UPDATE status=0
+2026-09-24 12:39:22.322 +138s I/logcat:wpa_supplicant[logcat-reader] 09-24 12:39:22.319  6804  6804 I wpa_supplicant: p2p0: AP-STA-CONNECTED a4:4e:31:83:ec:3c
+2026-09-24 12:39:22.330 +138s I/gateway[main] system broadcast: WiFi Direct -> CONNECTED connected=true
+2026-09-24 12:39:25.004 +141s I/logcat:dnsmasq[logcat-reader] 09-24 12:39:25.000  9557  9557 I dnsmasq : DHCPDISCOVER(p2p0) a4:4e:31:83:ec:3c 
+2026-09-24 12:39:25.008 +141s I/logcat:dnsmasq[logcat-reader] 09-24 12:39:25.000  9557  9557 I dnsmasq : DHCPOFFER(p2p0) 192.168.49.10 a4:4e:31:83:ec:3c 
+2026-09-24 12:39:25.012 +141s I/logcat:dnsmasq[logcat-reader] 09-24 12:39:25.003  9557  9557 I dnsmasq : DHCPREQUEST(p2p0) 192.168.49.10 a4:4e:31:83:ec:3c 
+2026-09-24 12:39:25.015 +141s I/logcat:dnsmasq[logcat-reader] 09-24 12:39:25.003  9557  9557 I dnsmasq : DHCPACK(p2p0) 192.168.49.10 a4:4e:31:83:ec:3c DESKTOP-EIQ7K6O
+2026-09-24 12:39:25.723 +142s I/root[DefaultDispatcher-worker-3] $ sh /data/local/tmp/setup_network.sh keepalive
+    |   -> exit 0, 19936ms
+2026-09-24 12:39:25.774 +142s I/portal[NanoHttpd Request Processor (#1)] portal: NEW CLIENT 192.168.49.10 - first contact (its OS sign-in sheet should now be up; watch for its probe + /redeem)
+2026-09-24 12:39:25.778 +142s I/portal[NanoHttpd Request Processor (#1)] portal probe GET /connecttest.txt from 192.168.49.10 (gateway 192.168.49.1)
+2026-09-24 12:39:26.082 +142s W/root[DefaultDispatcher-worker-2] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 315ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:39:26.135 +142s W/root[DefaultDispatcher-worker-4] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 303ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:39:26.195 +142s W/root[DefaultDispatcher-worker-8] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 325ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:39:26.257 +142s W/root[DefaultDispatcher-worker-10] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 342ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:39:26.317 +142s W/root[DefaultDispatcher-worker-5] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 366ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:39:26.378 +143s W/root[DefaultDispatcher-worker-9] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 384ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:39:26.857 +143s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 416ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:39:26.883 +143s I/gateway[DefaultDispatcher-worker-3] new device on the LAN: a4:4e:31:83:ec:3c DESKTOP-EIQ7K6O
+2026-09-24 12:39:26.980 +143s W/logcat:System.err[logcat-reader] 09-24 12:39:26.976  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:39:26.983 +143s W/logcat:System.err[logcat-reader] 09-24 12:39:26.976  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:39:26.987 +143s W/logcat:System.err[logcat-reader] 09-24 12:39:26.976  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:39:26.990 +143s W/logcat:System.err[logcat-reader] 09-24 12:39:26.976  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:39:26.994 +143s W/logcat:System.err[logcat-reader] 09-24 12:39:26.977  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:39:27.272 +143s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 45ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:39:27.275 +143s I/network[DefaultDispatcher-worker-3] usage: p2p0 rx=24288 tx=31904 (total, not per-client)
+2026-09-24 12:39:29.277 +145s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 20ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:39:32.730 +149s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 22ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:39:36.989 +153s W/logcat:System.err[logcat-reader] 09-24 12:39:36.986  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:39:36.996 +153s W/logcat:System.err[logcat-reader] 09-24 12:39:36.986  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:39:37.000 +153s W/logcat:System.err[logcat-reader] 09-24 12:39:36.986  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:39:37.003 +153s W/logcat:System.err[logcat-reader] 09-24 12:39:36.986  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:39:37.006 +153s W/logcat:System.err[logcat-reader] 09-24 12:39:36.986  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:39:46.908 +163s W/logcat:System.err[logcat-reader] 09-24 12:39:46.904  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:39:46.914 +163s W/logcat:System.err[logcat-reader] 09-24 12:39:46.905  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:39:46.918 +163s W/logcat:System.err[logcat-reader] 09-24 12:39:46.905  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:39:46.922 +163s W/logcat:System.err[logcat-reader] 09-24 12:39:46.905  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:39:46.924 +163s W/logcat:System.err[logcat-reader] 09-24 12:39:46.905  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:39:46.995 +163s W/logcat:System.err[logcat-reader] 09-24 12:39:46.991  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:39:46.999 +163s W/logcat:System.err[logcat-reader] 09-24 12:39:46.992  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:39:47.001 +163s W/logcat:System.err[logcat-reader] 09-24 12:39:46.992  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:39:47.004 +163s W/logcat:System.err[logcat-reader] 09-24 12:39:46.992  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:39:47.007 +163s W/logcat:System.err[logcat-reader] 09-24 12:39:46.992  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:39:55.842 +172s W/root[DefaultDispatcher-worker-9] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 416ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:39:55.908 +172s W/root[DefaultDispatcher-worker-5] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 423ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:39:55.966 +172s W/root[DefaultDispatcher-worker-10] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 421ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:39:56.014 +172s W/root[DefaultDispatcher-worker-8] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 410ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:39:56.055 +172s W/root[DefaultDispatcher-worker-4] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 390ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:39:56.110 +172s W/root[DefaultDispatcher-worker-1] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 384ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:39:56.674 +173s I/portal[NanoHttpd Request Processor (#2)] portal probe GET /connecttest.txt from 192.168.49.10 (gateway 192.168.49.1)
+2026-09-24 12:39:57.005 +173s W/logcat:System.err[logcat-reader] 09-24 12:39:57.001  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:39:57.009 +173s W/logcat:System.err[logcat-reader] 09-24 12:39:57.002  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:39:57.013 +173s W/logcat:System.err[logcat-reader] 09-24 12:39:57.002  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:39:57.015 +173s W/logcat:System.err[logcat-reader] 09-24 12:39:57.002  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:39:57.018 +173s W/logcat:System.err[logcat-reader] 09-24 12:39:57.002  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:40:00.006 +176s W/logcat:System.err[logcat-reader] 09-24 12:40:00.002  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:40:00.011 +176s W/logcat:System.err[logcat-reader] 09-24 12:40:00.002  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:40:00.015 +176s W/logcat:System.err[logcat-reader] 09-24 12:40:00.002  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:40:00.019 +176s W/logcat:System.err[logcat-reader] 09-24 12:40:00.002  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:40:00.021 +176s W/logcat:System.err[logcat-reader] 09-24 12:40:00.002  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:40:07.017 +183s W/logcat:System.err[logcat-reader] 09-24 12:40:07.013  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:40:07.021 +183s W/logcat:System.err[logcat-reader] 09-24 12:40:07.013  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:40:07.024 +183s W/logcat:System.err[logcat-reader] 09-24 12:40:07.013  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:40:07.027 +183s W/logcat:System.err[logcat-reader] 09-24 12:40:07.013  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:40:07.030 +183s W/logcat:System.err[logcat-reader] 09-24 12:40:07.013  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:40:09.583 +186s I/portal[NanoHttpd Request Processor (#5)] portal probe GET /redirect from 192.168.49.10 (gateway 192.168.49.1)
+2026-09-24 12:40:09.877 +186s I/portal[NanoHttpd Request Processor (#6)] portal request GET /favicon.ico from 192.168.49.10 (gateway 192.168.49.1)
+2026-09-24 12:40:17.027 +193s W/logcat:System.err[logcat-reader] 09-24 12:40:17.024  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:40:17.036 +193s W/logcat:System.err[logcat-reader] 09-24 12:40:17.024  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:40:17.039 +193s W/logcat:System.err[logcat-reader] 09-24 12:40:17.024  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:40:17.042 +193s W/logcat:System.err[logcat-reader] 09-24 12:40:17.024  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:40:17.044 +193s W/logcat:System.err[logcat-reader] 09-24 12:40:17.024  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:40:17.992 +194s W/root[DefaultDispatcher-worker-2] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 354ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:40:18.047 +194s W/root[DefaultDispatcher-worker-6] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 368ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:40:18.104 +194s W/root[DefaultDispatcher-worker-7] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 371ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:40:18.161 +194s W/root[DefaultDispatcher-worker-12] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 380ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:40:18.218 +194s W/root[DefaultDispatcher-worker-11] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 379ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:40:18.322 +194s W/root[DefaultDispatcher-worker-8] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 384ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:40:19.026 +195s I/network[DefaultDispatcher-worker-3] fw: health natFirst=true fwdFirst=true healthy=true
+2026-09-24 12:40:21.223 +197s I/portal[NanoHttpd Request Processor (#7)] portal probe GET /connecttest.txt from 192.168.49.10 (gateway 192.168.49.1)
+2026-09-24 12:40:22.112 +198s E/logcat:WifiVendorHal[logcat-reader] 09-24 12:40:22.109  2163  2266 E WifiVendorHal: getWifiLinkLayerStats(l.937) failed {.code = ERROR_NOT_SUPPORTED, .description = }
+2026-09-24 12:40:22.132 +198s I/logcat:wpa_supplicant[logcat-reader] 09-24 12:40:22.129  6804  6804 I wpa_supplicant: wpa_driver_nl80211_driver_cmd: wlan0 recv cmd SETSUSPENDMODE 1
+2026-09-24 12:40:22.135 +198s I/logcat:wpa_supplicant[logcat-reader] 09-24 12:40:22.132  6804  6804 I wpa_supplicant: wpa_driver_nl80211_driver_cmd: ret = 0 used = 17 total = 512
+2026-09-24 12:40:23.835 +200s E/logcat:WifiVendorHal[logcat-reader] 09-24 12:40:23.828  2163  2266 E WifiVendorHal: getWifiLinkLayerStats(l.937) failed {.code = ERROR_NOT_SUPPORTED, .description = }
+2026-09-24 12:40:23.836 +200s I/logcat:wpa_supplicant[logcat-reader] 09-24 12:40:23.831  6804  6804 I wpa_supplicant: wpa_driver_nl80211_driver_cmd: wlan0 recv cmd SETSUSPENDMODE 0
+2026-09-24 12:40:23.837 +200s I/logcat:wpa_supplicant[logcat-reader] 09-24 12:40:23.832  6804  6804 I wpa_supplicant: wpa_driver_nl80211_driver_cmd: ret = 0 used = 17 total = 512
+2026-09-24 12:40:26.778 +203s W/logcat:System.err[logcat-reader] 09-24 12:40:26.772  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:40:26.780 +203s W/logcat:System.err[logcat-reader] 09-24 12:40:26.772  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:40:26.782 +203s W/logcat:System.err[logcat-reader] 09-24 12:40:26.772  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:40:26.784 +203s W/logcat:System.err[logcat-reader] 09-24 12:40:26.772  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:40:26.786 +203s W/logcat:System.err[logcat-reader] 09-24 12:40:26.772  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:40:27.033 +203s W/logcat:System.err[logcat-reader] 09-24 12:40:27.030  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:40:27.037 +203s W/logcat:System.err[logcat-reader] 09-24 12:40:27.030  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:40:27.040 +203s W/logcat:System.err[logcat-reader] 09-24 12:40:27.030  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:40:27.042 +203s W/logcat:System.err[logcat-reader] 09-24 12:40:27.030  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:40:27.045 +203s W/logcat:System.err[logcat-reader] 09-24 12:40:27.030  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:40:28.115 +204s I/logcat:EthernetTracker[logcat-reader] 09-24 12:40:28.114  2163  2188 I EthernetTracker: interfaceLinkStateChanged, iface: wlan0, up: false
+2026-09-24 12:40:32.723 +209s I/root[DefaultDispatcher-worker-3] $ sh /data/local/tmp/setup_network.sh keepalive
+    |   -> exit 0, 13593ms
+2026-09-24 12:40:32.875 +209s W/root[DefaultDispatcher-worker-8] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 123ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:40:32.914 +209s W/root[DefaultDispatcher-worker-11] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 137ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:40:32.959 +209s W/root[DefaultDispatcher-worker-12] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 157ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:40:33.005 +209s W/root[DefaultDispatcher-worker-6] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 179ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:40:33.053 +209s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 26ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:40:33.369 +210s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 21ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:40:33.371 +210s I/network[DefaultDispatcher-worker-3] usage: p2p0 rx=264819 tx=82378 (total, not per-client)
+2026-09-24 12:40:35.044 +211s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 23ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:40:37.039 +213s W/logcat:System.err[logcat-reader] 09-24 12:40:37.037  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:40:37.040 +213s W/logcat:System.err[logcat-reader] 09-24 12:40:37.037  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:40:37.041 +213s W/logcat:System.err[logcat-reader] 09-24 12:40:37.037  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:40:37.042 +213s W/logcat:System.err[logcat-reader] 09-24 12:40:37.037  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:40:37.043 +213s W/logcat:System.err[logcat-reader] 09-24 12:40:37.037  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:40:38.423 +215s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 19ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:40:41.176 +217s I/voucher[DefaultDispatcher-worker-3] generated 1 voucher(s) for "abc" (20min, 500/500 kbit)
+2026-09-24 12:40:41.655 +218s I/portal[NanoHttpd Request Processor (#8)] portal probe GET /connecttest.txt from 192.168.49.10 (gateway 192.168.49.1)
+2026-09-24 12:40:43.833 +220s W/logcat:System.err[logcat-reader] 09-24 12:40:43.830  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:40:43.846 +220s W/logcat:System.err[logcat-reader] 09-24 12:40:43.830  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:40:43.847 +220s W/logcat:System.err[logcat-reader] 09-24 12:40:43.830  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:40:43.848 +220s W/logcat:System.err[logcat-reader] 09-24 12:40:43.830  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:40:43.850 +220s W/logcat:System.err[logcat-reader] 09-24 12:40:43.830  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:40:47.051 +223s W/logcat:System.err[logcat-reader] 09-24 12:40:47.040  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:40:47.061 +223s W/logcat:System.err[logcat-reader] 09-24 12:40:47.040  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:40:47.063 +223s W/logcat:System.err[logcat-reader] 09-24 12:40:47.040  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:40:47.071 +223s W/logcat:System.err[logcat-reader] 09-24 12:40:47.041  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:40:47.074 +223s W/logcat:System.err[logcat-reader] 09-24 12:40:47.041  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:40:48.133 +224s I/logcat:EthernetTracker[logcat-reader] 09-24 12:40:48.131  2163  2188 I EthernetTracker: interfaceLinkStateChanged, iface: wlan0, up: false
+2026-09-24 12:40:57.057 +233s W/logcat:System.err[logcat-reader] 09-24 12:40:57.054  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:40:57.066 +233s W/logcat:System.err[logcat-reader] 09-24 12:40:57.054  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:40:57.070 +233s W/logcat:System.err[logcat-reader] 09-24 12:40:57.054  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:40:57.073 +233s W/logcat:System.err[logcat-reader] 09-24 12:40:57.054  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:40:57.076 +233s W/logcat:System.err[logcat-reader] 09-24 12:40:57.054  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:41:00.006 +236s W/logcat:System.err[logcat-reader] 09-24 12:41:00.002  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:41:00.010 +236s W/logcat:System.err[logcat-reader] 09-24 12:41:00.003  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:41:00.015 +236s W/logcat:System.err[logcat-reader] 09-24 12:41:00.003  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:41:00.019 +236s W/logcat:System.err[logcat-reader] 09-24 12:41:00.012  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:41:00.023 +236s W/logcat:System.err[logcat-reader] 09-24 12:41:00.012  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:41:01.455 +238s W/root[DefaultDispatcher-worker-2] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 323ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:41:01.518 +238s W/root[DefaultDispatcher-worker-12] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 341ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:41:01.635 +238s W/root[DefaultDispatcher-worker-11] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 412ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:41:01.695 +238s W/root[DefaultDispatcher-worker-6] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 412ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:41:01.755 +238s W/root[DefaultDispatcher-worker-7] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 413ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:41:01.940 +238s W/root[DefaultDispatcher-worker-1] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 361ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:41:06.663 +243s I/portal[NanoHttpd Request Processor (#9)] portal request POST /redeem from 192.168.49.10 (gateway 192.168.49.1)
+2026-09-24 12:41:07.072 +243s W/logcat:System.err[logcat-reader] 09-24 12:41:07.068  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:41:07.075 +243s W/logcat:System.err[logcat-reader] 09-24 12:41:07.069  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:41:07.077 +243s W/logcat:System.err[logcat-reader] 09-24 12:41:07.073  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:41:07.079 +243s W/logcat:System.err[logcat-reader] 09-24 12:41:07.073  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:41:07.081 +243s W/logcat:System.err[logcat-reader] 09-24 12:41:07.073  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:41:07.902 +244s I/portal[NanoHttpd Request Processor (#11)] portal probe GET /connecttest.txt from 192.168.49.10 (gateway 192.168.49.1)
+2026-09-24 12:41:17.079 +253s W/logcat:System.err[logcat-reader] 09-24 12:41:17.078  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:41:17.081 +253s W/logcat:System.err[logcat-reader] 09-24 12:41:17.078  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:41:17.082 +253s W/logcat:System.err[logcat-reader] 09-24 12:41:17.078  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:41:17.083 +253s W/logcat:System.err[logcat-reader] 09-24 12:41:17.078  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:41:17.084 +253s W/logcat:System.err[logcat-reader] 09-24 12:41:17.078  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:41:22.095 +258s I/root[NanoHttpd Request Processor (#9)] $ cat /proc/net/arp
+    |   -> exit 0, 15428ms
+    |   out: IP address       HW type     Flags       HW address            Mask     Device
+    | 192.168.49.10    0x1         0x2         a4:4e:31:83:ec:3c     *        p2p0
+2026-09-24 12:41:22.101 +258s I/voucher[NanoHttpd Request Processor (#9)] redeem "HCSQ-KEBE" (abc, UNUSED) from mac a4:4e:31:83:ec:3c ip 192.168.49.10
+2026-09-24 12:41:22.102 +258s I/voucher[NanoHttpd Request Processor (#9)] activating "HCSQ-KEBE" on mac a4:4e:31:83:ec:3c -> ip 192.168.49.10, tc class 1:101 (500/500 kbit), expires 2026-09-24 13:01:22.100
+2026-09-24 12:41:22.309 +258s I/root[NanoHttpd Request Processor (#12)] $ cat /proc/net/arp
+    |   -> exit 0, 897ms
+    |   out: IP address       HW type     Flags       HW address            Mask     Device
+    | 192.168.49.10    0x1         0x2         a4:4e:31:83:ec:3c     *        p2p0
+2026-09-24 12:41:22.401 +259s I/root[NanoHttpd Request Processor (#13)] $ cat /proc/net/arp
+    |   -> exit 0, 578ms
+    |   out: IP address       HW type     Flags       HW address            Mask     Device
+    | 192.168.49.10    0x1         0x2         a4:4e:31:83:ec:3c     *        p2p0
+2026-09-24 12:41:22.486 +259s W/root[DefaultDispatcher-worker-8] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 430ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:41:22.771 +259s I/logcat:dnsmasq[logcat-reader] 09-24 12:41:22.764  9557  9557 I dnsmasq : read /etc/hosts - 2 addresses
+2026-09-24 12:41:22.774 +259s I/logcat:dnsmasq[logcat-reader] 09-24 12:41:22.764  9557  9557 I dnsmasq : read /data/local/tmp/dhcp_hosts
+2026-09-24 12:41:22.781 +259s I/root[NanoHttpd Request Processor (#9)] $ sh /data/local/tmp/setup_network.sh reserve a4:4e:31:83:ec:3c 192.168.49.10
+    |   -> exit 0, 674ms
+    |   out: [setup_network] reserved a4:4e:31:83:ec:3c -> 192.168.49.10 (dnsmasq reloaded)
+2026-09-24 12:41:22.846 +259s W/root[DefaultDispatcher-worker-4] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 703ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:41:22.909 +259s W/root[DefaultDispatcher-worker-10] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 739ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:41:22.962 +259s W/root[DefaultDispatcher-worker-5] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 753ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:41:23.010 +259s W/root[DefaultDispatcher-worker-9] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 754ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:41:23.088 +259s I/root[NanoHttpd Request Processor (#14)] $ cat /proc/net/arp
+    |   -> exit 0, 650ms
+    |   out: IP address       HW type     Flags       HW address            Mask     Device
+    | 192.168.49.10    0x1         0x2         a4:4e:31:83:ec:3c     *        p2p0
+2026-09-24 12:41:23.129 +259s I/root[NanoHttpd Request Processor (#15)] $ cat /proc/net/arp
+    |   -> exit 0, 407ms
+    |   out: IP address       HW type     Flags       HW address            Mask     Device
+    | 192.168.49.10    0x1         0x2         a4:4e:31:83:ec:3c     *        p2p0
+2026-09-24 12:41:23.272 +259s I/root[NanoHttpd Request Processor (#9)] $ sh /data/local/tmp/setup_network.sh authorize a4:4e:31:83:ec:3c 192.168.49.10
+    |   -> exit 0, 487ms
+    |   out: [setup_network] authorized a4:4e:31:83:ec:3c (192.168.49.10)
+2026-09-24 12:41:23.355 +260s I/root[NanoHttpd Request Processor (#16)] $ cat /proc/net/arp
+    |   -> exit 0, 486ms
+    |   out: IP address       HW type     Flags       HW address            Mask     Device
+    | 192.168.49.10    0x1         0x2         a4:4e:31:83:ec:3c     *        p2p0
+2026-09-24 12:41:23.931 +260s I/root[NanoHttpd Request Processor (#9)] $ sh /data/local/tmp/bandwidth_control.sh add 192.168.49.10 101 500 500
+    |   -> exit 0, 657ms
+    |   out: [bandwidth] added  class 1: rate kbit ceil kbit
+2026-09-24 12:41:23.937 +260s I/voucher[NanoHttpd Request Processor (#9)] redeem "HCSQ-KEBE" -> Success ip=192.168.49.10 expires=2026-09-24 13:01:22.100
+2026-09-24 12:41:23.938 +260s I/portal[NanoHttpd Request Processor (#9)] portal: voucher HCSQKEBE redeemed by 192.168.49.10 (a4:4e:31:83:ec:3c) - the sign-in sheet should close on refresh
+2026-09-24 12:41:23.944 +260s I/voucher[NanoHttpd Request Processor (#12)] redeem "HCSQ-KEBE" (abc, ACTIVE) from mac a4:4e:31:83:ec:3c ip 192.168.49.10
+2026-09-24 12:41:24.386 +261s I/logcat:dnsmasq[logcat-reader] 09-24 12:41:24.384  9557  9557 I dnsmasq : read /etc/hosts - 2 addresses
+2026-09-24 12:41:24.389 +261s I/logcat:dnsmasq[logcat-reader] 09-24 12:41:24.384  9557  9557 I dnsmasq : read /data/local/tmp/dhcp_hosts
+2026-09-24 12:41:24.399 +261s I/root[NanoHttpd Request Processor (#12)] $ sh /data/local/tmp/setup_network.sh reserve a4:4e:31:83:ec:3c 192.168.49.10
+    |   -> exit 0, 453ms
+    |   out: [setup_network] reserved a4:4e:31:83:ec:3c -> 192.168.49.10 (dnsmasq reloaded)
+2026-09-24 12:41:24.486 +261s I/network[DefaultDispatcher-worker-3] fw: health natFirst=true fwdFirst=true healthy=true
+2026-09-24 12:41:24.838 +261s I/root[NanoHttpd Request Processor (#12)] $ sh /data/local/tmp/setup_network.sh authorize a4:4e:31:83:ec:3c 192.168.49.10
+    |   -> exit 0, 436ms
+    |   out: [setup_network] authorized a4:4e:31:83:ec:3c (192.168.49.10)
+2026-09-24 12:41:24.894 +261s W/root[DefaultDispatcher-worker-5] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 442ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:41:25.294 +261s I/root[NanoHttpd Request Processor (#12)] $ sh /data/local/tmp/bandwidth_control.sh add 192.168.49.10 101 500 500
+    |   -> exit 0, 453ms
+    |   out: [bandwidth] added  class 1: rate kbit ceil kbit
+2026-09-24 12:41:25.299 +261s I/voucher[NanoHttpd Request Processor (#12)] redeem "HCSQ-KEBE" -> Success ip=192.168.49.10 expires=2026-09-24 13:01:22.100
+2026-09-24 12:41:25.299 +261s I/portal[NanoHttpd Request Processor (#12)] portal: voucher HCSQKEBE redeemed by 192.168.49.10 (a4:4e:31:83:ec:3c) - the sign-in sheet should close on refresh
+2026-09-24 12:41:25.303 +261s I/voucher[NanoHttpd Request Processor (#13)] redeem "HCSQ-KEBE" (abc, ACTIVE) from mac a4:4e:31:83:ec:3c ip 192.168.49.10
+2026-09-24 12:41:25.631 +262s I/logcat:dnsmasq[logcat-reader] 09-24 12:41:25.628  9557  9557 I dnsmasq : read /etc/hosts - 2 addresses
+2026-09-24 12:41:25.633 +262s I/logcat:dnsmasq[logcat-reader] 09-24 12:41:25.629  9557  9557 I dnsmasq : read /data/local/tmp/dhcp_hosts
+2026-09-24 12:41:25.641 +262s I/root[NanoHttpd Request Processor (#13)] $ sh /data/local/tmp/setup_network.sh reserve a4:4e:31:83:ec:3c 192.168.49.10
+    |   -> exit 0, 336ms
+    |   out: [setup_network] reserved a4:4e:31:83:ec:3c -> 192.168.49.10 (dnsmasq reloaded)
+2026-09-24 12:41:27.088 +263s W/logcat:System.err[logcat-reader] 09-24 12:41:27.085  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:41:27.091 +263s W/logcat:System.err[logcat-reader] 09-24 12:41:27.085  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:41:27.093 +263s W/logcat:System.err[logcat-reader] 09-24 12:41:27.085  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:41:27.096 +263s W/logcat:System.err[logcat-reader] 09-24 12:41:27.085  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:41:27.099 +263s W/logcat:System.err[logcat-reader] 09-24 12:41:27.085  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:41:37.099 +273s W/logcat:System.err[logcat-reader] 09-24 12:41:37.095  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:41:37.101 +273s W/logcat:System.err[logcat-reader] 09-24 12:41:37.095  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:41:37.102 +273s W/logcat:System.err[logcat-reader] 09-24 12:41:37.096  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:41:37.104 +273s W/logcat:System.err[logcat-reader] 09-24 12:41:37.096  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:41:37.106 +273s W/logcat:System.err[logcat-reader] 09-24 12:41:37.096  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:41:45.556 +282s W/logcat:System.err[logcat-reader] 09-24 12:41:45.552  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:41:45.566 +282s W/logcat:System.err[logcat-reader] 09-24 12:41:45.553  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:41:45.569 +282s W/logcat:System.err[logcat-reader] 09-24 12:41:45.553  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:41:45.573 +282s W/logcat:System.err[logcat-reader] 09-24 12:41:45.553  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:41:45.576 +282s W/logcat:System.err[logcat-reader] 09-24 12:41:45.553  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:41:46.311 +282s I/root[DefaultDispatcher-worker-3] $ sh /data/local/tmp/setup_network.sh keepalive
+    |   -> exit 0, 20961ms
+2026-09-24 12:41:46.531 +283s I/root[NanoHttpd Request Processor (#13)] $ sh /data/local/tmp/setup_network.sh authorize a4:4e:31:83:ec:3c 192.168.49.10
+    |   -> exit 0, 20887ms
+    |   out: [setup_network] authorized a4:4e:31:83:ec:3c (192.168.49.10)
+2026-09-24 12:41:47.114 +283s W/logcat:System.err[logcat-reader] 09-24 12:41:47.111  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:41:47.117 +283s W/logcat:System.err[logcat-reader] 09-24 12:41:47.112  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:41:47.119 +283s W/logcat:System.err[logcat-reader] 09-24 12:41:47.112  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:41:47.121 +283s W/logcat:System.err[logcat-reader] 09-24 12:41:47.112  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:41:47.123 +283s W/logcat:System.err[logcat-reader] 09-24 12:41:47.112  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:41:47.283 +283s I/root[NanoHttpd Request Processor (#13)] $ sh /data/local/tmp/bandwidth_control.sh add 192.168.49.10 101 500 500
+    |   -> exit 0, 747ms
+    |   out: [bandwidth] added  class 1: rate kbit ceil kbit
+2026-09-24 12:41:47.292 +283s I/voucher[NanoHttpd Request Processor (#13)] redeem "HCSQ-KEBE" -> Success ip=192.168.49.10 expires=2026-09-24 13:01:22.100
+2026-09-24 12:41:47.293 +283s I/portal[NanoHttpd Request Processor (#13)] portal: voucher HCSQKEBE redeemed by 192.168.49.10 (a4:4e:31:83:ec:3c) - the sign-in sheet should close on refresh
+2026-09-24 12:41:47.307 +283s I/voucher[NanoHttpd Request Processor (#14)] redeem "HCSQ-KEBE" (abc, ACTIVE) from mac a4:4e:31:83:ec:3c ip 192.168.49.10
+2026-09-24 12:41:47.342 +283s W/root[DefaultDispatcher-worker-5] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 754ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:41:47.398 +284s W/root[DefaultDispatcher-worker-10] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 775ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:41:47.453 +284s W/root[DefaultDispatcher-worker-9] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 804ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:41:47.566 +284s W/root[DefaultDispatcher-worker-4] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 892ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:41:47.624 +284s W/root[DefaultDispatcher-worker-8] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 911ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:41:47.933 +284s I/logcat:dnsmasq[logcat-reader] 09-24 12:41:47.931  9557  9557 I dnsmasq : read /etc/hosts - 2 addresses
+2026-09-24 12:41:47.936 +284s I/logcat:dnsmasq[logcat-reader] 09-24 12:41:47.931  9557  9557 I dnsmasq : read /data/local/tmp/dhcp_hosts
+2026-09-24 12:41:47.947 +284s I/root[NanoHttpd Request Processor (#14)] $ sh /data/local/tmp/setup_network.sh reserve a4:4e:31:83:ec:3c 192.168.49.10
+    |   -> exit 0, 637ms
+    |   out: [setup_network] reserved a4:4e:31:83:ec:3c -> 192.168.49.10 (dnsmasq reloaded)
+2026-09-24 12:41:48.171 +284s W/root[DefaultDispatcher-worker-1] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 659ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:41:48.502 +285s I/root[NanoHttpd Request Processor (#14)] $ sh /data/local/tmp/setup_network.sh authorize a4:4e:31:83:ec:3c 192.168.49.10
+    |   -> exit 0, 551ms
+    |   out: [setup_network] authorized a4:4e:31:83:ec:3c (192.168.49.10)
+2026-09-24 12:41:49.210 +285s I/root[NanoHttpd Request Processor (#14)] $ sh /data/local/tmp/bandwidth_control.sh add 192.168.49.10 101 500 500
+    |   -> exit 0, 706ms
+    |   out: [bandwidth] added  class 1: rate kbit ceil kbit
+2026-09-24 12:41:49.220 +285s I/voucher[NanoHttpd Request Processor (#14)] redeem "HCSQ-KEBE" -> Success ip=192.168.49.10 expires=2026-09-24 13:01:22.100
+2026-09-24 12:41:49.222 +285s I/portal[NanoHttpd Request Processor (#14)] portal: voucher HCSQKEBE redeemed by 192.168.49.10 (a4:4e:31:83:ec:3c) - the sign-in sheet should close on refresh
+2026-09-24 12:41:49.226 +285s I/voucher[NanoHttpd Request Processor (#15)] redeem "HCSQ-KEBE" (abc, ACTIVE) from mac a4:4e:31:83:ec:3c ip 192.168.49.10
+2026-09-24 12:41:49.598 +286s I/logcat:dnsmasq[logcat-reader] 09-24 12:41:49.595  9557  9557 I dnsmasq : read /etc/hosts - 2 addresses
+2026-09-24 12:41:49.601 +286s I/logcat:dnsmasq[logcat-reader] 09-24 12:41:49.595  9557  9557 I dnsmasq : read /data/local/tmp/dhcp_hosts
+2026-09-24 12:41:49.611 +286s I/root[NanoHttpd Request Processor (#15)] $ sh /data/local/tmp/setup_network.sh reserve a4:4e:31:83:ec:3c 192.168.49.10
+    |   -> exit 0, 384ms
+    |   out: [setup_network] reserved a4:4e:31:83:ec:3c -> 192.168.49.10 (dnsmasq reloaded)
+2026-09-24 12:41:49.879 +286s I/logcat:EthernetTracker[logcat-reader] 09-24 12:41:49.875  2163  2188 I EthernetTracker: interfaceLinkStateChanged, iface: wlan0, up: false
+2026-09-24 12:41:50.032 +286s I/root[NanoHttpd Request Processor (#15)] $ sh /data/local/tmp/setup_network.sh authorize a4:4e:31:83:ec:3c 192.168.49.10
+    |   -> exit 0, 418ms
+    |   out: [setup_network] authorized a4:4e:31:83:ec:3c (192.168.49.10)
+2026-09-24 12:41:50.459 +287s I/root[NanoHttpd Request Processor (#15)] $ sh /data/local/tmp/bandwidth_control.sh add 192.168.49.10 101 500 500
+    |   -> exit 0, 425ms
+    |   out: [bandwidth] added  class 1: rate kbit ceil kbit
+2026-09-24 12:41:50.464 +287s I/voucher[NanoHttpd Request Processor (#15)] redeem "HCSQ-KEBE" -> Success ip=192.168.49.10 expires=2026-09-24 13:01:22.100
+2026-09-24 12:41:50.464 +287s I/portal[NanoHttpd Request Processor (#15)] portal: voucher HCSQKEBE redeemed by 192.168.49.10 (a4:4e:31:83:ec:3c) - the sign-in sheet should close on refresh
+2026-09-24 12:41:50.469 +287s I/voucher[NanoHttpd Request Processor (#16)] redeem "HCSQ-KEBE" (abc, ACTIVE) from mac a4:4e:31:83:ec:3c ip 192.168.49.10
+2026-09-24 12:41:50.686 +287s I/logcat:dnsmasq[logcat-reader] 09-24 12:41:50.684  9557  9557 I dnsmasq : read /etc/hosts - 2 addresses
+2026-09-24 12:41:50.688 +287s I/logcat:dnsmasq[logcat-reader] 09-24 12:41:50.684  9557  9557 I dnsmasq : read /data/local/tmp/dhcp_hosts
+2026-09-24 12:41:50.692 +287s I/root[NanoHttpd Request Processor (#16)] $ sh /data/local/tmp/setup_network.sh reserve a4:4e:31:83:ec:3c 192.168.49.10
+    |   -> exit 0, 221ms
+    |   out: [setup_network] reserved a4:4e:31:83:ec:3c -> 192.168.49.10 (dnsmasq reloaded)
+2026-09-24 12:41:51.056 +287s I/root[NanoHttpd Request Processor (#16)] $ sh /data/local/tmp/setup_network.sh authorize a4:4e:31:83:ec:3c 192.168.49.10
+    |   -> exit 0, 362ms
+    |   out: [setup_network] authorized a4:4e:31:83:ec:3c (192.168.49.10)
+2026-09-24 12:41:51.112 +287s W/root[DefaultDispatcher-worker-4] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 390ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:41:51.663 +288s I/root[NanoHttpd Request Processor (#16)] $ sh /data/local/tmp/bandwidth_control.sh add 192.168.49.10 101 500 500
+    |   -> exit 0, 605ms
+    |   out: [bandwidth] added  class 1: rate kbit ceil kbit
+2026-09-24 12:41:51.673 +288s I/voucher[NanoHttpd Request Processor (#16)] redeem "HCSQ-KEBE" -> Success ip=192.168.49.10 expires=2026-09-24 13:01:22.100
+2026-09-24 12:41:51.675 +288s I/portal[NanoHttpd Request Processor (#16)] portal: voucher HCSQKEBE redeemed by 192.168.49.10 (a4:4e:31:83:ec:3c) - the sign-in sheet should close on refresh
+2026-09-24 12:41:51.898 +288s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 118ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:41:52.082 +288s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 58ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:41:52.166 +288s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 76ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:41:52.171 +288s I/network[DefaultDispatcher-worker-3] usage: p2p0 rx=478150 tx=107969 (total, not per-client)
+2026-09-24 12:41:54.751 +291s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 54ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:41:57.124 +293s W/logcat:System.err[logcat-reader] 09-24 12:41:57.121  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:41:57.127 +293s W/logcat:System.err[logcat-reader] 09-24 12:41:57.121  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:41:57.129 +293s W/logcat:System.err[logcat-reader] 09-24 12:41:57.121  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:41:57.130 +293s W/logcat:System.err[logcat-reader] 09-24 12:41:57.121  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:41:57.132 +293s W/logcat:System.err[logcat-reader] 09-24 12:41:57.121  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:41:58.730 +295s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 54ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:42:00.007 +296s W/logcat:System.err[logcat-reader] 09-24 12:42:00.002  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:42:00.009 +296s W/logcat:System.err[logcat-reader] 09-24 12:42:00.002  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:42:00.011 +296s W/logcat:System.err[logcat-reader] 09-24 12:42:00.002  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:42:00.013 +296s W/logcat:System.err[logcat-reader] 09-24 12:42:00.002  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:42:00.015 +296s W/logcat:System.err[logcat-reader] 09-24 12:42:00.002  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:42:07.131 +303s W/logcat:System.err[logcat-reader] 09-24 12:42:07.128  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:42:07.135 +303s W/logcat:System.err[logcat-reader] 09-24 12:42:07.128  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:42:07.139 +303s W/logcat:System.err[logcat-reader] 09-24 12:42:07.129  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:42:07.141 +303s W/logcat:System.err[logcat-reader] 09-24 12:42:07.129  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:42:07.143 +303s W/logcat:System.err[logcat-reader] 09-24 12:42:07.129  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:42:17.144 +313s W/logcat:System.err[logcat-reader] 09-24 12:42:17.141  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:42:17.149 +313s W/logcat:System.err[logcat-reader] 09-24 12:42:17.141  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:42:17.153 +313s W/logcat:System.err[logcat-reader] 09-24 12:42:17.141  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:42:17.156 +313s W/logcat:System.err[logcat-reader] 09-24 12:42:17.141  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:42:17.158 +313s W/logcat:System.err[logcat-reader] 09-24 12:42:17.141  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:42:19.424 +316s W/root[DefaultDispatcher-worker-4] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 264ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:42:19.473 +316s W/root[DefaultDispatcher-worker-9] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 275ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:42:19.519 +316s W/root[DefaultDispatcher-worker-8] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 273ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:42:19.556 +316s W/root[DefaultDispatcher-worker-10] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 264ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:42:19.590 +316s W/root[DefaultDispatcher-worker-5] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 255ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:42:27.155 +323s W/logcat:System.err[logcat-reader] 09-24 12:42:27.152  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:42:27.162 +323s W/logcat:System.err[logcat-reader] 09-24 12:42:27.152  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:42:27.167 +323s W/logcat:System.err[logcat-reader] 09-24 12:42:27.152  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:42:27.170 +323s W/logcat:System.err[logcat-reader] 09-24 12:42:27.152  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:42:27.172 +323s W/logcat:System.err[logcat-reader] 09-24 12:42:27.152  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:42:37.166 +333s W/logcat:System.err[logcat-reader] 09-24 12:42:37.163  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:42:37.169 +333s W/logcat:System.err[logcat-reader] 09-24 12:42:37.163  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:42:37.171 +333s W/logcat:System.err[logcat-reader] 09-24 12:42:37.163  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:42:37.173 +333s W/logcat:System.err[logcat-reader] 09-24 12:42:37.163  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:42:37.175 +333s W/logcat:System.err[logcat-reader] 09-24 12:42:37.163  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:42:41.801 +338s W/root[DefaultDispatcher-worker-7] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 368ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:42:41.831 +338s W/root[DefaultDispatcher-worker-8] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 373ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:42:41.872 +338s W/root[DefaultDispatcher-worker-11] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 388ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:42:41.913 +338s W/root[DefaultDispatcher-worker-6] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 405ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:42:41.961 +338s W/root[DefaultDispatcher-worker-2] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 397ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:42:42.683 +339s W/root[DefaultDispatcher-worker-10] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 620ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:42:42.703 +339s I/network[DefaultDispatcher-worker-3] fw: health natFirst=true fwdFirst=true healthy=true
+2026-09-24 12:42:47.175 +343s W/logcat:System.err[logcat-reader] 09-24 12:42:47.173  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:42:47.184 +343s W/logcat:System.err[logcat-reader] 09-24 12:42:47.173  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:42:47.186 +343s W/logcat:System.err[logcat-reader] 09-24 12:42:47.174  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:42:47.187 +343s W/logcat:System.err[logcat-reader] 09-24 12:42:47.174  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:42:47.188 +343s W/logcat:System.err[logcat-reader] 09-24 12:42:47.174  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:42:57.189 +353s W/logcat:System.err[logcat-reader] 09-24 12:42:57.184  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:42:57.193 +353s W/logcat:System.err[logcat-reader] 09-24 12:42:57.187  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:42:57.195 +353s W/logcat:System.err[logcat-reader] 09-24 12:42:57.187  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:42:57.198 +353s W/logcat:System.err[logcat-reader] 09-24 12:42:57.187  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:42:57.200 +353s W/logcat:System.err[logcat-reader] 09-24 12:42:57.187  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:42:59.024 +355s I/root[DefaultDispatcher-worker-3] $ sh /data/local/tmp/setup_network.sh keepalive
+    |   -> exit 0, 16131ms
+2026-09-24 12:42:59.161 +355s W/root[DefaultDispatcher-worker-10] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 112ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:42:59.188 +355s W/root[DefaultDispatcher-worker-2] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 119ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:42:59.212 +355s W/root[DefaultDispatcher-worker-6] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 120ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:42:59.236 +355s W/root[DefaultDispatcher-worker-11] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 120ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:42:59.284 +355s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 23ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:42:59.364 +356s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 23ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:42:59.391 +356s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 23ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:42:59.393 +356s I/network[DefaultDispatcher-worker-3] usage: p2p0 rx=636082 tx=116119 (total, not per-client)
+2026-09-24 12:43:00.002 +356s W/logcat:System.err[logcat-reader] 09-24 12:43:00.000  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:43:00.003 +356s W/logcat:System.err[logcat-reader] 09-24 12:43:00.000  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:43:00.004 +356s W/logcat:System.err[logcat-reader] 09-24 12:43:00.000  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:43:00.006 +356s W/logcat:System.err[logcat-reader] 09-24 12:43:00.000  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:43:00.007 +356s W/logcat:System.err[logcat-reader] 09-24 12:43:00.000  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:43:01.852 +358s W/root[DefaultDispatcher-worker-6] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 56ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:43:05.282 +361s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 22ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:43:05.556 +362s W/logcat:System.err[logcat-reader] 09-24 12:43:05.555  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:43:05.558 +362s W/logcat:System.err[logcat-reader] 09-24 12:43:05.555  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:43:05.558 +362s W/logcat:System.err[logcat-reader] 09-24 12:43:05.555  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:43:05.559 +362s W/logcat:System.err[logcat-reader] 09-24 12:43:05.555  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:43:05.560 +362s W/logcat:System.err[logcat-reader] 09-24 12:43:05.555  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:43:07.194 +363s W/logcat:System.err[logcat-reader] 09-24 12:43:07.193  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:43:07.195 +363s W/logcat:System.err[logcat-reader] 09-24 12:43:07.193  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:43:07.196 +363s W/logcat:System.err[logcat-reader] 09-24 12:43:07.193  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:43:07.197 +363s W/logcat:System.err[logcat-reader] 09-24 12:43:07.193  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:43:07.198 +363s W/logcat:System.err[logcat-reader] 09-24 12:43:07.193  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:43:09.847 +366s I/logcat:EthernetTracker[logcat-reader] 09-24 12:43:09.846  2163  2188 I EthernetTracker: interfaceLinkStateChanged, iface: wlan0, up: false
+2026-09-24 12:43:17.199 +373s W/logcat:System.err[logcat-reader] 09-24 12:43:17.196  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:43:17.200 +373s W/logcat:System.err[logcat-reader] 09-24 12:43:17.197  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:43:17.201 +373s W/logcat:System.err[logcat-reader] 09-24 12:43:17.197  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:43:17.202 +373s W/logcat:System.err[logcat-reader] 09-24 12:43:17.197  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:43:17.202 +373s W/logcat:System.err[logcat-reader] 09-24 12:43:17.197  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:43:18.542 +375s W/root[DefaultDispatcher-worker-10] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 81ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:43:18.564 +375s W/root[DefaultDispatcher-worker-6] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 82ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:43:18.584 +375s W/root[DefaultDispatcher-worker-11] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 82ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:43:27.207 +383s W/logcat:System.err[logcat-reader] 09-24 12:43:27.204  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:43:27.209 +383s W/logcat:System.err[logcat-reader] 09-24 12:43:27.204  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:43:27.211 +383s W/logcat:System.err[logcat-reader] 09-24 12:43:27.204  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:43:27.213 +383s W/logcat:System.err[logcat-reader] 09-24 12:43:27.204  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:43:27.218 +383s W/logcat:System.err[logcat-reader] 09-24 12:43:27.204  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:43:32.362 +389s W/root[DefaultDispatcher-worker-7] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 392ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:43:32.401 +389s W/root[DefaultDispatcher-worker-2] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 376ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:43:32.436 +389s W/root[DefaultDispatcher-worker-5] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 356ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:43:32.466 +389s W/root[DefaultDispatcher-worker-8] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 331ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:43:32.819 +389s I/network[DefaultDispatcher-worker-3] fw: health natFirst=true fwdFirst=true healthy=true
+2026-09-24 12:43:37.216 +393s W/logcat:System.err[logcat-reader] 09-24 12:43:37.214  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:43:37.221 +393s W/logcat:System.err[logcat-reader] 09-24 12:43:37.214  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:43:37.223 +393s W/logcat:System.err[logcat-reader] 09-24 12:43:37.214  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:43:37.224 +393s W/logcat:System.err[logcat-reader] 09-24 12:43:37.214  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:43:37.225 +393s W/logcat:System.err[logcat-reader] 09-24 12:43:37.214  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:43:47.222 +403s W/logcat:System.err[logcat-reader] 09-24 12:43:47.219  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:43:47.224 +403s W/logcat:System.err[logcat-reader] 09-24 12:43:47.219  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:43:47.228 +403s W/logcat:System.err[logcat-reader] 09-24 12:43:47.220  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:43:47.231 +403s W/logcat:System.err[logcat-reader] 09-24 12:43:47.220  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:43:47.234 +403s W/logcat:System.err[logcat-reader] 09-24 12:43:47.220  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:43:52.803 +409s I/root[DefaultDispatcher-worker-3] $ sh /data/local/tmp/setup_network.sh keepalive
+    |   -> exit 0, 19934ms
+2026-09-24 12:43:53.262 +409s W/root[DefaultDispatcher-worker-8] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 399ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:43:53.320 +409s W/root[DefaultDispatcher-worker-5] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 399ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:43:53.377 +410s W/root[DefaultDispatcher-worker-2] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 398ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:43:53.436 +410s W/root[DefaultDispatcher-worker-7] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 401ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:43:53.493 +410s W/root[DefaultDispatcher-worker-6] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 402ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:43:53.552 +410s W/root[DefaultDispatcher-worker-10] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 403ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:43:53.674 +410s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 58ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:43:54.154 +410s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 28ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:43:54.206 +410s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 47ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:43:54.209 +410s I/network[DefaultDispatcher-worker-3] usage: p2p0 rx=783455 tx=131707 (total, not per-client)
+2026-09-24 12:43:56.311 +412s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 57ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:43:57.237 +413s W/logcat:System.err[logcat-reader] 09-24 12:43:57.235  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:43:57.238 +413s W/logcat:System.err[logcat-reader] 09-24 12:43:57.235  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:43:57.239 +413s W/logcat:System.err[logcat-reader] 09-24 12:43:57.235  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:43:57.240 +413s W/logcat:System.err[logcat-reader] 09-24 12:43:57.235  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:43:57.241 +413s W/logcat:System.err[logcat-reader] 09-24 12:43:57.235  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:43:59.928 +416s W/root[DefaultDispatcher-worker-3] $ cat /data/local/tmp/dnsmasq.leases /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    |   -> exit 1, 45ms
+    |   out: 1790236165 a4:4e:31:83:ec:3c 192.168.49.10 DESKTOP-EIQ7K6O 01:a4:4e:31:83:ec:3c
+2026-09-24 12:44:00.003 +416s W/logcat:System.err[logcat-reader] 09-24 12:44:00.000  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:44:00.004 +416s W/logcat:System.err[logcat-reader] 09-24 12:44:00.000  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:44:00.007 +416s W/logcat:System.err[logcat-reader] 09-24 12:44:00.001  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:44:00.009 +416s W/logcat:System.err[logcat-reader] 09-24 12:44:00.001  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:44:00.014 +416s W/logcat:System.err[logcat-reader] 09-24 12:44:00.001  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:44:05.569 +422s W/logcat:System.err[logcat-reader] 09-24 12:44:05.567  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:44:05.571 +422s W/logcat:System.err[logcat-reader] 09-24 12:44:05.567  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:44:05.572 +422s W/logcat:System.err[logcat-reader] 09-24 12:44:05.567  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:44:05.573 +422s W/logcat:System.err[logcat-reader] 09-24 12:44:05.567  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:44:05.575 +422s W/logcat:System.err[logcat-reader] 09-24 12:44:05.567  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:44:07.239 +423s W/logcat:System.err[logcat-reader] 09-24 12:44:07.238  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:44:07.241 +423s W/logcat:System.err[logcat-reader] 09-24 12:44:07.238  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:44:07.242 +423s W/logcat:System.err[logcat-reader] 09-24 12:44:07.238  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:44:07.243 +423s W/logcat:System.err[logcat-reader] 09-24 12:44:07.238  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:44:07.244 +423s W/logcat:System.err[logcat-reader] 09-24 12:44:07.238  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
+2026-09-24 12:44:16.406 +433s I/ui[main] opening the debugger from the dashboard
+2026-09-24 12:44:16.754 +433s I/ui[main] debugger opened
+2026-09-24 12:44:17.243 +433s W/logcat:System.err[logcat-reader] 09-24 12:44:17.241  2163  2252 W System.err: java.lang.NullPointerException: null receiver
+2026-09-24 12:44:17.244 +433s W/logcat:System.err[logcat-reader] 09-24 12:44:17.241  2163  2252 W System.err: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-24 12:44:17.244 +433s W/logcat:System.err[logcat-reader] 09-24 12:44:17.241  2163  2252 W System.err: 	at com.mediatek.server.MtkDataShaping.openLteGateByDataShaping(MtkDataShaping.java:36)
+2026-09-24 12:44:17.245 +433s W/logcat:System.err[logcat-reader] 09-24 12:44:17.241  2163  2252 W System.err: 	at com.android.server.AlarmManagerService.deliverAlarmsLocked(AlarmManagerService.java:4113)
+2026-09-24 12:44:17.246 +433s W/logcat:System.err[logcat-reader] 09-24 12:44:17.241  2163  2252 W System.err: 	at com.android.server.AlarmManagerService$AlarmThread.run(AlarmManagerService.java:4304)
