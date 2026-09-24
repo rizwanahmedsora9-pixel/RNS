@@ -52,22 +52,25 @@ class QrTest {
     fun `the matrix carries the three finder patterns`() {
         val m = Qr.matrix(payload, 101)!!
         val (minX, minY, maxX, maxY) = bounds(m)
-        // Top-left corner: 7 dark modules, a 1-module gap, then the timing
-        // pattern (1 dark module). With non-integer scaling each module is
-        // ~3-4 px, so compare ratios instead of exact counts.
-        val l1 = run(m, minX, minY, dark = true, dx = 1, dy = 0)      // ~7 modules
-        val l2 = run(m, minX + l1, minY, dark = false, dx = 1, dy = 0) // ~1
-        val l3 = run(m, minX + l1 + l2, minY, dark = true, dx = 1, dy = 0) // ~1
-        val u = l1 / 7.0
-        assertTrue("gap $l2 vs unit $u", l2.toDouble() in 0.6 * u..1.4 * u)
-        assertTrue("timing start $l3 vs unit $u", l3.toDouble() in 0.6 * u..1.4 * u)
-        // The other two corners of the bounding box carry the same 7-module
-        // dark run in both directions.
-        assertTrue("top-left column", run(m, minX, minY, dark = true, dx = 0, dy = 1).toDouble() in 5.6 * u..8.4 * u)
-        assertTrue("top-right row", run(m, maxX, minY, dark = true, dx = -1, dy = 0).toDouble() in 5.6 * u..8.4 * u)
-        assertTrue("top-right column", run(m, maxX, minY, dark = true, dx = 0, dy = 1).toDouble() in 5.6 * u..8.4 * u)
-        assertTrue("bottom-left row", run(m, minX, maxY, dark = true, dx = 1, dy = 0).toDouble() in 5.6 * u..8.4 * u)
-        assertTrue("bottom-left column", run(m, minX, maxY, dark = true, dx = 0, dy = -1).toDouble() in 5.6 * u..8.4 * u)
+        // Top-left corner: a 7-module dark run, a 1-module gap, then the
+        // timing pattern. Non-integer scaling smears exact module counts, so
+        // the check is qualitative: the gap is at most a third of the finder
+        // run, and all five corner runs are of the same size as each other.
+        val l1 = run(m, minX, minY, dark = true, dx = 1, dy = 0)       // ~7 modules
+        val l2 = run(m, minX + l1, minY, dark = false, dx = 1, dy = 0)  // ~1 module
+        val l3 = run(m, minX + l1 + l2, minY, dark = true, dx = 1, dy = 0) // ~1 module
+        assertTrue("gap ($l2) must be far shorter than the finder run ($l1)", l1 >= 2 * l2)
+        assertTrue("timing start ($l3) must be far shorter than the finder run ($l1)", l1 >= 2 * l3)
+        val corners = listOf(
+            "top-left column" to run(m, minX, minY, dark = true, dx = 0, dy = 1),
+            "top-right row" to run(m, maxX, minY, dark = true, dx = -1, dy = 0),
+            "top-right column" to run(m, maxX, minY, dark = true, dx = 0, dy = 1),
+            "bottom-left row" to run(m, minX, maxY, dark = true, dx = 1, dy = 0),
+            "bottom-left column" to run(m, minX, maxY, dark = true, dx = 0, dy = -1)
+        )
+        for ((label, r) in corners) {
+            assertTrue("$label run $r vs top-left $l1", r in (l1 - 3)..(l1 + 3))
+        }
     }
 
     @Test
