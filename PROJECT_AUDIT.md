@@ -277,16 +277,26 @@ watchdog, the portal and the voucher path at once.
   against stub `iptables`/`ip`/`tc`/`dnsmasq`: probe keys, cleanup of an untracked dnsmasq and of
   the port-67 guard, `nat` re-install without a DHCP restart and without duplicate redirects,
   idempotent `keepalive`, orphan handling.
-- The Kotlin side **was not compiled or run here**: this sandbox has no JDK, no Gradle, no
-  `kotlinc` and no network. CI (`.github/workflows/apk.yml`) builds the APK and runs the unit tests
-  on push/PR; device tests 1–7 of the master plan are still outstanding.
-- Instead of a compiler, the whole tree was cross-referenced statically (every `Class.member`
-  and every `manager.method()` used in the touched files against the declarations). That found one
-  real break — `NetworkController.start()` calling a `waitForLanInterface` that only existed in
-  `HotspotService` — which is now a private helper of `NetworkController` (250 ms poll for the
-  pinned/framework AP interface); the now-dead copy in the service was deleted. The remaining
-  matches are nested classes/enum constants that the checker does not model.
-- Nothing in this document is a device test result.
+- The sandbox this branch was written in has no JDK, no Gradle, no `kotlinc` and no network, so the
+  first compile of this code happened in **CI, on the pull request** (`.github/workflows/apk.yml`),
+  and it was not green at first. It found, in order:
+  1. `RootShell.kt` — `IFACE_REGEX`, `IP_REGEX`, `MAC_REGEX`, `SUBNET_REGEX` and `POLL_WAIT_MS`
+     were used but never declared in this rewrite. Fixed.
+  2. `WifiShareAp.kt:328,391` — `interfaceNames()` returns `Set<String>` while `handleFromGroup()`
+     and `discoverInterface()` declared `List<String>`. **This one was pre-existing: the same two
+     errors are what failed the APK build on `main` (commit `dfe5a8e`, check-run annotations), so
+     `main` did not compile at all before this branch.** Fixed by matching the parameter type to the
+     caller and to `ApConfigText.pickApInterface()`; no behaviour change.
+- Static cross-referencing was used where a compiler was not available (every `Class.member` /
+  `manager.method()` in the touched files against its declaration, and a whole-tree scan for
+  `UPPER_CASE` identifiers used but never declared). That found one further real break:
+  `NetworkController.start()` called a `waitForLanInterface` that only existed in `HotspotService`
+  — now a private 250 ms-poll helper of `NetworkController`, and the dead copy in the service was
+  deleted.
+- **CI result on this branch (run `35978368544`): green** — shell self-test, `testDebugUnitTest`
+  (all unit tests), `lintDebug`, and the debug + release APK build. Artifact `hotspot-billing-apk-31`
+  (6.7 MB) is attached to the run. This is a build/test result, **not** a device test: master-plan
+  device tests 1–7 are still outstanding and are not claimed here.
 
 ## 13. Still open after this phase
 
