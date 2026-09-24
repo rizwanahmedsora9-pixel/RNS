@@ -14,6 +14,11 @@ class RnsApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // The AP layer asks the framework (getWifiApState / requestGroupInfo)
+        // whether something is beaconing; that needs the application Context and
+        // must be ready before ANY code path can ask - a "Detect" tap, a
+        // notification action, or the gateway service.
+        com.hotspot.billing.net.SoftApController.attach(this)
         AppLog.init(this)
         CrashGuard.install(this, versionLabel())
         AppLog.i(

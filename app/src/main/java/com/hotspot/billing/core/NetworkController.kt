@@ -249,7 +249,8 @@ class NetworkController(
             if (iface != null) return iface
             if (lastLogged.isEmpty()) {
                 lastLogged = "waiting"
-                log("network: no AP interface yet, polling every 250ms")
+                log("network: no AP is beaconing yet, polling every 250ms (an interface being " +
+                    "UP is not enough - the interface must be a running hotspot)")
             }
             delay(250)
         }

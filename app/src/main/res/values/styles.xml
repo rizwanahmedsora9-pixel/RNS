@@ -1,12 +1,67 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- One label/value row on the dashboard card. -->
+
+    <!--
+        One theme for the whole app, forced dark.
+
+        The manifest used to point at Theme.AppCompat.DayNight, so on a phone in
+        light mode every widget the framework draws - dialogs, EditText
+        underlines, radio buttons, the action bar - came out light on top of the
+        dark layout. AppTheme is Dark.NoActionBar: the widgets match the cards,
+        and the header in each screen replaces the stock action bar.
+    -->
+    <style name="AppTheme" parent="Theme.AppCompat.Dark.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:colorBackground">@color/bg</item>
+        <item name="android:textColor">@color/textPrimary</item>
+        <item name="android:textColorPrimary">@color/textPrimary</item>
+        <item name="android:textColorSecondary">@color/textDim</item>
+        <item name="android:textColorHint">@color/textDim</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/card</item>
+        <item name="colorPrimary">@color/accent</item>
+        <item name="colorPrimaryDark">@color/bg</item>
+        <item name="colorAccent">@color/accent</item>
+        <item name="colorControlNormal">@color/textDim</item>
+        <item name="colorControlActivated">@color/accent</item>
+        <item name="colorControlHighlight">@color/accentDark</item>
+        <item name="alertDialogTheme">@style/AppAlertDialog</item>
+    </style>
+
+    <style name="AppAlertDialog" parent="Theme.AppCompat.Dialog.Alert">
+        <item name="android:windowBackground">@color/cardRaised</item>
+        <item name="android:colorBackground">@color/cardRaised</item>
+        <item name="android:textColor">@color/textPrimary</item>
+        <item name="colorAccent">@color/accent</item>
+        <item name="buttonBarPositiveButtonStyle">@style/AppDialogButton</item>
+        <item name="buttonBarNegativeButtonStyle">@style/AppDialogButton</item>
+        <item name="buttonBarNeutralButtonStyle">@style/AppDialogButton</item>
+    </style>
+
+    <style name="AppDialogButton" parent="Widget.AppCompat.Button.Borderless.Colored">
+        <item name="android:textColor">@color/accent</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+
+    <!-- A section title inside a tab. -->
+    <style name="SectionHeader">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/textDim</item>
+        <item name="android:letterSpacing">0.08</item>
+        <item name="android:paddingBottom">8dp</item>
+    </style>
+
+    <!-- One label/value row on a dashboard card. -->
     <style name="StatRow">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:orientation">horizontal</item>
-        <item name="android:paddingTop">4dp</item>
-        <item name="android:paddingBottom">4dp</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:paddingTop">7dp</item>
+        <item name="android:paddingBottom">7dp</item>
     </style>
 
     <style name="StatLabel">
@@ -23,50 +78,126 @@
         <item name="android:textSize">13sp</item>
         <item name="android:textStyle">bold</item>
         <item name="android:textColor">@color/textPrimary</item>
+        <item name="android:gravity">end</item>
+        <item name="android:maxWidth">220dp</item>
+        <item name="android:ellipsize">end</item>
     </style>
 
-    <style name="SectionHeader">
-        <item name="android:layout_width">match_parent</item>
+    <!-- Big rounded buttons: filled (primary), tonal (secondary), outline. -->
+    <!-- layout_width is deliberately NOT set here: a weighted child must say
+         0dp at the use site, and a button that fills a row must say
+         match_parent. Setting it in the style is how a row of two buttons
+         silently collapses to one. -->
+    <style name="BtnBase">
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:textSize">12sp</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:paddingTop">12dp</item>
+        <item name="android:paddingBottom">12dp</item>
+        <item name="android:textSize">14sp</item>
         <item name="android:textStyle">bold</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:letterSpacing">0.02</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="android:foreground">?attr/selectableItemBackground</item>
+    </style>
+
+    <style name="BtnPrimary" parent="BtnBase">
+        <item name="android:background">@drawable/bg_button_primary</item>
+        <item name="android:textColor">#FFFFFF</item>
+    </style>
+
+    <style name="BtnTonal" parent="BtnBase">
+        <item name="android:background">@drawable/bg_button_tonal</item>
+        <item name="android:textColor">@color/textPrimary</item>
+    </style>
+
+    <style name="BtnOutline" parent="BtnBase">
+        <item name="android:background">@drawable/bg_button_outline</item>
         <item name="android:textColor">@color/textDim</item>
-        <item name="android:paddingBottom">6dp</item>
     </style>
 
-    <style name="PresetButton">
-        <item name="android:layout_width">0dp</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_weight">1</item>
-        <item name="android:minHeight">0dp</item>
-        <item name="android:padding">8dp</item>
-        <item name="android:textSize">12sp</item>
-        <item name="android:textColor">@color/textPrimary</item>
-        <item name="android:backgroundTint">@color/chip</item>
+    <style name="BtnDanger" parent="BtnBase">
+        <item name="android:background">@drawable/bg_button_danger</item>
+        <item name="android:textColor">@color/red</item>
     </style>
 
-    <style name="FilterButton">
-        <item name="android:layout_width">0dp</item>
-        <item name="android:layout_height">wrap_content</item>
+    <!-- Chips: presets, filters. -->
+    <style name="PresetButton" parent="BtnBase">
         <item name="android:layout_weight">1</item>
-        <item name="android:minHeight">0dp</item>
-        <item name="android:padding">8dp</item>
-        <item name="android:textSize">12sp</item>
+        <item name="android:background">@drawable/bg_button_tonal</item>
         <item name="android:textColor">@color/textPrimary</item>
-        <item name="android:backgroundTint">@color/chip</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:minHeight">40dp</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">8dp</item>
+    </style>
+
+    <style name="FilterButton" parent="BtnBase">
+        <item name="android:layout_weight">1</item>
+        <item name="android:background">@drawable/bg_button_outline</item>
+        <item name="android:textColor">@color/textDim</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:minHeight">40dp</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">8dp</item>
     </style>
 
     <!-- Small action button inside a list row. -->
-    <style name="RowButton">
+    <style name="RowButton" parent="BtnBase">
         <item name="android:layout_width">wrap_content</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:minHeight">0dp</item>
+        <item name="android:minHeight">34dp</item>
         <item name="android:paddingTop">6dp</item>
         <item name="android:paddingBottom">6dp</item>
         <item name="android:paddingLeft">12dp</item>
         <item name="android:paddingRight">12dp</item>
         <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/textDim</item>
+        <item name="android:background">@drawable/bg_button_outline</item>
+    </style>
+
+    <!-- Bottom navigation item. -->
+    <style name="NavItem">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:gravity">center</item>
+        <item name="android:paddingTop">10dp</item>
+        <item name="android:paddingBottom">10dp</item>
+        <item name="android:background">@drawable/bg_nav_item</item>
+        <item name="android:textSize">11sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/nav_item_text</item>
+        <item name="android:drawablePadding">4dp</item>
+        <item name="android:stateListAnimator">@null</item>
+    </style>
+
+    <!-- Text fields: rounded, filled, matching the cards. -->
+    <style name="Input" parent="Widget.AppCompat.EditText">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:paddingLeft">14dp</item>
+        <item name="android:paddingRight">14dp</item>
+        <item name="android:paddingTop">12dp</item>
+        <item name="android:paddingBottom">12dp</item>
+        <item name="android:background">@drawable/bg_input</item>
         <item name="android:textColor">@color/textPrimary</item>
-        <item name="android:backgroundTint">@color/chip</item>
+        <item name="android:textColorHint">@color/textDim</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:stateListAnimator">@null</item>
+    </style>
+
+    <!-- Radio buttons for the hotspot mode list. -->
+    <style name="ModeRadio" parent="Widget.AppCompat.RadioButton">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">46dp</item>
+        <item name="android:paddingLeft">6dp</item>
+        <item name="android:paddingRight">6dp</item>
+        <item name="android:textColor">@color/textPrimary</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:buttonTint">@color/accent</item>
+        <item name="android:background">@drawable/bg_radio_row</item>
+        <item name="android:stateListAnimator">@null</item>
     </style>
 </resources>

@@ -81,6 +81,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var dashApKind: TextView
     private lateinit var dashApSsid: TextView
     private lateinit var dashFindings: TextView
+    private lateinit var dashDot: View
+    private lateinit var headerPhase: TextView
 
     // Vouchers tab
     private lateinit var etPlan: EditText
@@ -192,12 +194,13 @@ class MainActivity : AppCompatActivity() {
             section.visibility = if (i == index) View.VISIBLE else View.GONE
         }
         tabs.forEachIndexed { i, tab ->
+            // state_selected drives bg_nav_item, nav_item_text and the icon tint,
+            // so one call moves the whole item to its active look.
+            tab.isSelected = i == index
             tab.setTextColor(
                 ContextCompat.getColor(this, if (i == index) R.color.accent else R.color.textDim)
             )
-            tab.setBackgroundColor(
-                ContextCompat.getColor(this, if (i == index) R.color.chip else android.R.color.transparent)
-            )
+            tab.alpha = if (i == index) 1f else 0.85f
         }
     }
 
@@ -216,6 +219,8 @@ class MainActivity : AppCompatActivity() {
         dashApKind = findViewById(R.id.dash_ap_kind)
         dashApSsid = findViewById(R.id.dash_ap_ssid)
         dashFindings = findViewById(R.id.dash_findings)
+        dashDot = findViewById(R.id.dash_dot)
+        headerPhase = findViewById(R.id.header_phase)
 
         findViewById<Button>(R.id.btn_start).setOnClickListener {
             withService { it.startSequence() }
@@ -267,7 +272,8 @@ class MainActivity : AppCompatActivity() {
         val state = svc?.state
         if (state == null) {
             dashRoot.text = "..."
-            dashAp.text = "service starting..."
+            paintPhase("Connecting to the gateway…", R.color.textDim)
+            headerPhase.text = "…"
             return
         }
 
@@ -277,14 +283,16 @@ class MainActivity : AppCompatActivity() {
             false -> "NOT granted - allow in Magisk"
         }
 
-        dashAp.text = when (state.phase) {
-            HotspotService.Phase.STARTING -> "starting..."
-            HotspotService.Phase.WAITING_AP -> "OFF - switch it on (see below)"
-            HotspotService.Phase.RUNNING -> "running"
-            HotspotService.Phase.STOPPING -> "STOPPING..."
-            HotspotService.Phase.STOPPED -> "stopped"
-            HotspotService.Phase.ERROR -> "error"
+        val phase = when (state.phase) {
+            HotspotService.Phase.STARTING -> "Starting the gateway…" to R.color.amber
+            HotspotService.Phase.WAITING_AP -> "Hotspot is off" to R.color.red
+            HotspotService.Phase.RUNNING -> "Hotspot running" to R.color.green
+            HotspotService.Phase.STOPPING -> "Stopping…" to R.color.amber
+            HotspotService.Phase.STOPPED -> "Stopped" to R.color.textDim
+            HotspotService.Phase.ERROR -> "Error - see below" to R.color.red
         }
+        paintPhase(phase.first, phase.second)
+        headerPhase.text = state.phase.name
 
         dashApKind.text = state.apKind ?: (state.apMode?.let { "waiting ($it)" } ?: "-")
         dashApSsid.text = when {
@@ -317,8 +325,25 @@ class MainActivity : AppCompatActivity() {
         dashHint.visibility = if (state.message.isNotBlank()) View.VISIBLE else View.GONE
         if (state.message.isNotBlank()) dashHint.text = state.message
 
-        dashLog.text = svc?.dumpLog()?.joinToString("\n")?.ifBlank { "(no events yet)" }
-            ?: "(no events yet)"
+        // The dashboard shows the story so far; the debugger holds the whole
+        // 400-line buffer. A 400-line wall of monospace is not a dashboard.
+        val lines = svc?.dumpLog() ?: emptyList()
+        dashLog.text = when {
+            lines.isEmpty() -> "(no events yet)"
+            lines.size > LOG_ON_DASH ->
+                "(… ${lines.size - LOG_ON_DASH} older events - the debugger has them all)\n" +
+                    lines.takeLast(LOG_ON_DASH).joinToString("\n")
+            else -> lines.joinToString("\n")
+        }
+    }
+
+    /** Hero status: the big label, its colour, and the live dot beside it. */
+    private fun paintPhase(label: String, colorRes: Int) {
+        val color = ContextCompat.getColor(this, colorRes)
+        dashAp.text = label
+        dashAp.setTextColor(color)
+        headerPhase.setTextColor(color)
+        dashDot.backgroundTintList = android.content.res.ColorStateList.valueOf(color)
     }
 
     // ---------------------------------------------------------------- vouchers
@@ -825,5 +850,8 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val REQ_WIFI_SHARE = 101
+
+        /** Newest events on the dashboard; the debugger keeps the rest. */
+        private const val LOG_ON_DASH = 30
     }
 }

@@ -23,8 +23,10 @@
         stays connected to its own WiFi, so no hotspot toggle is needed - the phone receives
         internet on one interface and serves customers on another. They need Location permission
         and Location switched ON (Android refuses to create any WiFi network otherwise).
-        \"Automatic\" tries: existing hotspot, system hotspot command (Android 12+), local-only
-        hotspot, WiFi Direct, root hostapd - and logs every attempt with the reason it failed.</string>
+        \"Automatic\" keeps a hotspot that is already beaconing, then tries the system
+        hotspot, local-only hotspot, WiFi Direct and root hostapd - every attempt and the
+        reason it failed is logged, and the method that actually works on this phone is
+        tried first from then on.</string>
 
     <string name="perm_rationale">Android only lets an app create a WiFi network (hotspot,
         local-only hotspot or WiFi Direct group) when it has location permission - and Location

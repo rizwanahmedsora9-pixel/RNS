@@ -591,7 +591,8 @@ section "probe: one round-trip for the whole health picture"
 $SETUP start >/dev/null 2>&1
 $SETUP probe ap0 > "$WORK/out.probe" 2>&1 || fail "probe exited non-zero"
 for key in probe_version lan wan subnet gateway lan_up lan_addr ip_forward dhcp_ours dhcp_orphan \
-           dhcp_foreign dhcp_pid nat_jump fwd_jump in_jump masq redirect rule_iif rule_subnet leases authed; do
+           dhcp_foreign dhcp_pid nat_jump fwd_jump in_jump masq redirect rule_iif rule_subnet leases authed \
+           shaper netshare; do
     if grep -q "^$key=" "$WORK/out.probe"; then pass "probe reports $key"; else fail "probe is missing $key"; fi
 done
 if grep -q '^masq=yes$' "$WORK/out.probe"; then
@@ -731,6 +732,30 @@ else
 fi
 check "cleanup removes the port-67 OUTPUT guard (next session's DHCP must not be blocked)" 0 "iptables -t filter -I OUTPUT 1 -o ap0 -p udp --sport 67"
 $SETUP cleanup ap0 >/dev/null 2>&1 && pass "cleanup is idempotent (running twice is safe)" || fail "second cleanup exited non-zero"
+
+# OUR fallback address (configure_lan_address) must not survive cleanup: a
+# leftover 10.66.0.1 on a dead p2p0 made the next start adopt that interface as
+# a running hotspot (2026-09-24 14:42 device log).
+STUB_LAN_ADDR='10: ap0    inet 10.66.0.1/24 brd 10.66.0.255 scope global ap0' \
+    $SETUP cleanup ap0 > "$WORK/out.cleanupaddr" 2>&1
+if grep -q "removed our leftover 10.66.0.1/24 from ap0" "$WORK/out.cleanupaddr"; then
+    pass "cleanup removes our own leftover fallback address"
+else
+    fail "cleanup left 10.66.0.1/24 behind: $(grep '\[setup_network\]' "$WORK/out.cleanupaddr" | tail -3)"
+fi
+
+section "purge-state: drop stale files without a full teardown"
+touch "$STATE/dnsmasq_hotspot.pid" "$STATE/hotspot.runtime" "$STATE/hotspot.last_lan_if"
+: > "$LOG"
+$SETUP purge-state > "$WORK/out.purge" 2>&1 || fail "purge-state exited non-zero"
+for f in dnsmasq_hotspot.pid hotspot.runtime hotspot.last_lan_if; do
+    if [ ! -f "$STATE/$f" ]; then pass "purge-state removed $f"; else fail "purge-state left $f"; fi
+done
+if grep -qE "^(iptables|ip6tables) |^tc |^ip (addr|link|rule) " "$LOG"; then
+    fail "purge-state touched the network: $(grep -E "^(iptables|ip6tables|tc|ip)" "$LOG" | head -3)"
+else
+    pass "purge-state only removed files"
+fi
 
 section "foreign-dhcp / procs report cleanly"
 : > "$LOG"

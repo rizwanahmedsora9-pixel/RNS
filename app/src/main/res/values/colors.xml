@@ -1,17 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#2D8CF0</color>
+    <color name="ic_launcher_background">#152033</color>
 
-    <!-- App palette (dark by design - this is a router admin screen) -->
-    <color name="bg">#0E1319</color>
-    <color name="card">#1A222D</color>
-    <color name="chip">#243040</color>
-    <color name="textPrimary">#E8ECF1</color>
-    <color name="textDim">#93A0AE</color>
-    <color name="accent">#2D8CF0</color>
-    <color name="accentDark">#1F66B5</color>
-    <color name="green">#27AE60</color>
-    <color name="red">#E74C3C</color>
-    <color name="amber">#F5A623</color>
+    <!-- App palette (dark by design - this is a router admin console).
+         Existing names are kept so every layout reference stays valid; the
+         extra tokens below give the redesign its hierarchy. -->
+    <color name="bg">#0B0F14</color>
+    <color name="card">#141B25</color>
+    <color name="cardRaised">#19222E</color>
+    <color name="chip">#1E2836</color>
+    <color name="chipActive">#27364A</color>
+    <color name="outline">#253142</color>
+    <color name="textPrimary">#ECF1F7</color>
+    <color name="textDim">#8C9AAD</color>
+    <color name="accent">#3D9BFF</color>
+    <color name="accentDark">#1F6FD0</color>
+    <color name="accentSoft">#14273F</color>
+    <color name="green">#27C175</color>
+    <color name="greenSoft">#12352A</color>
+    <color name="red">#FF5C6C</color>
+    <color name="redSoft">#331B22</color>
+    <color name="amber">#FFB02E</color>
+    <color name="amberSoft">#332A14</color>
     <color name="code">#9CD3FF</color>
 </resources>

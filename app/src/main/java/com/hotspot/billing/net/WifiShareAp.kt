@@ -43,10 +43,20 @@ class WifiShareAp(private val context: Context) {
 
     private val app = context.applicationContext
 
-    @Volatile private var lohsReservation: Any? = null
+    // The LocalOnlyHotspot reservation is declared on the companion (below):
+    // Android allows only ONE per process, and both ApLauncher's helper and
+    // SoftApController's query helper must see the same one - otherwise a held
+    // reservation looks like "no local-only hotspot" to the adoption check.
     @Volatile private var p2pManager: WifiP2pManager? = null
     @Volatile private var p2pChannel: WifiP2pManager.Channel? = null
     @Volatile private var p2pGroupActive = false
+
+    /**
+     * Kept apart from [p2pChannel]: the adoption check may run a dozen times a
+     * minute and must not churn (or leak) framework channels, and it must not
+     * steal the channel the running group was created on.
+     */
+    @Volatile private var factsChannel: WifiP2pManager.Channel? = null
 
     // ------------------------------------------------------------------ LocalOnlyHotspot
 
@@ -470,6 +480,74 @@ class WifiShareAp(private val context: Context) {
 
     fun isWifiDirectActive(): Boolean = p2pGroupActive
 
+    /** We are holding a LocalOnlyHotspotReservation in this process. */
+    fun holdsLocalOnly(): Boolean = lohsReservation != null
+
+    /** What the framework currently says about a WiFi Direct group. */
+    data class GroupFacts(
+        /** true = we own a group, false = the framework answered "no group", null = unknown. */
+        val isOwner: Boolean?,
+        val iface: String?,
+        val ssid: String?,
+        val passphrase: String?
+    )
+
+    /**
+     * A short, main-thread-safe `requestGroupInfo` for [SoftApController]'s
+     * adoption check. Answers in milliseconds when WiFi Direct is off (no group
+     * to report) and gives up after [GROUP_FACTS_TIMEOUT_MS] instead of holding
+     * the caller - "unknown" must never look like "no group".
+     *
+     * On the main thread it returns unknown immediately rather than blocking on
+     * a framework callback; every caller that needs a real answer already runs
+     * on IO.
+     */
+    fun currentGroup(timeoutMs: Long = GROUP_FACTS_TIMEOUT_MS): GroupFacts {
+        if (isMainThread()) return GroupFacts(null, null, null, null)
+        val manager = p2pManager
+            ?: (app.getSystemService(Context.WIFI_P2P_SERVICE) as? WifiP2pManager)
+            ?: return GroupFacts(null, null, null, null)
+        p2pManager = manager
+        var channel = factsChannel
+        if (channel == null) {
+            channel = manager.initialize(app, Looper.getMainLooper()) {
+                AppLog.d(AppLog.TAG_AP, "p2p: query channel closed")
+            }
+            factsChannel = channel
+        }
+        if (channel == null) return GroupFacts(null, null, null, null)
+        val latch = CountDownLatch(1)
+        var group: WifiP2pGroup? = null
+        try {
+            manager.requestGroupInfo(channel, WifiP2pManager.GroupInfoListener { g ->
+                group = g
+                latch.countDown()
+            })
+        } catch (e: Throwable) {
+            AppLog.d(AppLog.TAG_AP, "p2p: requestGroupInfo threw ${e.javaClass.simpleName}: ${e.message}")
+            return GroupFacts(null, null, null, null)
+        }
+        if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+            AppLog.d(AppLog.TAG_AP, "p2p: requestGroupInfo did not answer within ${timeoutMs}ms")
+            return GroupFacts(null, null, null, null)
+        }
+        val answer = group ?: return GroupFacts(false, null, null, null)
+        if (!answer.isGroupOwner) return GroupFacts(false, null, answer.networkName, answer.passphrase)
+        return GroupFacts(
+            true, hiddenInterfaceName(answer) ?: p2pGroupIfaceName(),
+            answer.networkName, answer.passphrase
+        )
+    }
+
+    /** The interface a previously-created group (this process) is running on. */
+    private fun p2pGroupIfaceName(): String? =
+        try {
+            RootShell.getprop("wifi.direct.interface")?.takeIf { it.isNotBlank() }
+        } catch (e: Throwable) {
+            null
+        }
+
+
     private fun requestGroup(channel: WifiP2pManager.Channel, log: (String) -> Unit): WifiP2pGroup? {
         val latch = CountDownLatch(1)
         var result: WifiP2pGroup? = null
@@ -559,6 +637,17 @@ class WifiShareAp(private val context: Context) {
         private const val CALLBACK_TIMEOUT_MS = 30_000L
         private const val GROUP_INFO_TIMEOUT_MS = 10_000L
         private const val INTERFACE_TIMEOUT_MS = 20_000L
+
+        /**
+         * The one LocalOnlyHotspotReservation this process holds. Shared on the
+         * companion so every [WifiShareAp] instance - ApLauncher's and the query
+         * helper SoftApController makes - agrees about whether we have one.
+         */
+        @Volatile
+        private var lohsReservation: Any? = null
+
+        /** How long the adoption check waits for `requestGroupInfo` (unknown beats hanging). */
+        private const val GROUP_FACTS_TIMEOUT_MS = 2_000L
 
         /** WifiManager.LocalOnlyHotspotCallback error codes, in plain words. */
         fun lohsFailure(reason: Int): String = when (reason) {

@@ -317,10 +317,22 @@ class HotspotService : android.app.Service() {
     /** Runs a fresh health check on demand (the debugger's "Check now" button). */
     suspend fun checkNow(): List<Finding> = withContext(Dispatchers.IO) { healthCheck(report = true) }
 
-    /** Re-runs the whole AP strategy on demand ("Try NetShare again"). */
+    /**
+     * Re-runs the whole AP strategy on demand ("Try NetShare again").
+     *
+     * Deliberately does nothing when a start is already running: cancelling the
+     * job does not interrupt the blocking root command it is waiting on, so a
+     * second `runGateway` would queue behind the first and the button would look
+     * dead (that is what the 2026-09-24 14:41 retry press did - two cleanups,
+     * 30 s of shell time, before anything moved). The running attempt already
+     * retries every 20 s.
+     */
     fun retryAp() {
+        if (gatewayJob?.isActive == true) {
+            log("AP retry requested from the UI - a gateway run is already in progress, letting it finish")
+            return
+        }
         log("AP retry requested from the UI")
-        gatewayJob?.cancel()
         gatewayJob = scope.launch { runGateway() }
     }
 
@@ -377,8 +389,12 @@ class HotspotService : android.app.Service() {
         // "Restart app -> old sessions cleaned" (master plan TEST 7). A dnsmasq,
         // a firewall chain or a tc class left by a previous process would fight
         // the new session: the 2026-09-24 log's "Address already in use" came
-        // from exactly that. Cost: one root command.
-        emergencyCleaner.cleanupEverything("starting a new session")
+        // from exactly that. Cost: ONE probe when nothing is left behind (the
+        // 15-second cleanup only runs when the probe actually finds something),
+        // and the AP is never torn down here - a network that is already
+        // beaconing is adopted as-is, which is what made the earlier version
+        // spend 70 s per start rebuilding a hotspot that was fine.
+        emergencyCleaner.cleanupEverything("starting a new session", state.lanIf, stopAp = false)
 
         // Ensure default voucher plans exist (Phase 8)
         try {
@@ -1109,6 +1125,12 @@ class HotspotService : android.app.Service() {
     }
 
     private fun describeApState(raw: Int): String = when (raw) {
+        // WifiManager.WIFI_AP_STATE_* - the broadcast carries these, not 0..4.
+        10 -> "DISABLING"
+        11 -> "DISABLED"
+        12 -> "ENABLING"
+        13 -> "ENABLED"
+        14 -> "FAILED"
         0 -> "DISABLING"
         1 -> "DISABLED"
         2 -> "ENABLING"
@@ -1137,6 +1159,14 @@ class HotspotService : android.app.Service() {
         const val KEY_WAN_IF = "wan_if"
         const val KEY_LAN_IF = "lan_if"
         const val KEY_AP_MODE = "ap_mode"
+
+        /**
+         * The AP method that last beaconed on this radio
+         * ([com.hotspot.billing.net.ApPlan.Step] name). What a chipset can start
+         * is a hardware question; once answered it is worth remembering so the
+         * next start does not re-learn it the slow way.
+         */
+        const val KEY_AP_LAST_METHOD = "ap_last_method"
         const val KEY_LOGCAT_MODE = "logcat_mode"
         const val DEFAULT_SSID = "RNS-Hotspot"
         const val DEFAULT_PASS = "hotspot123"

@@ -1,66 +1,73 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  One dark console: header, the four tabs, and a bottom navigation bar.
+  Every id below is bound in MainActivity - do not rename one without
+  changing the Kotlin as well.
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@color/bg">
 
-    <!-- Tab bar -->
+    <!-- ================================== header ================================== -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:background="@color/card">
+        android:gravity="center_vertical"
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="10dp">
 
-        <TextView
-            android:id="@+id/tab_dashboard"
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:gravity="center"
-            android:padding="14dp"
-            android:text="@string/tab_dashboard"
-            android:textSize="13sp"
-            android:textStyle="bold"
-            android:textColor="@color/accent" />
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/app_name"
+                android:textSize="21sp"
+                android:textStyle="bold"
+                android:textColor="@color/textPrimary"
+                android:letterSpacing="0.01" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:text="Voucher gateway · rooted Android"
+                android:textSize="11sp"
+                android:textColor="@color/textDim" />
+        </LinearLayout>
 
         <TextView
-            android:id="@+id/tab_vouchers"
-            android:layout_width="0dp"
+            android:id="@+id/header_phase"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:padding="14dp"
-            android:text="@string/tab_vouchers"
-            android:textSize="13sp"
-            android:textStyle="bold"
-            android:textColor="@color/textDim" />
-
-        <TextView
-            android:id="@+id/tab_users"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:padding="14dp"
-            android:text="@string/tab_users"
-            android:textSize="13sp"
-            android:textStyle="bold"
-            android:textColor="@color/textDim" />
-
-        <TextView
-            android:id="@+id/tab_settings"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:padding="14dp"
-            android:text="@string/tab_settings"
-            android:textSize="13sp"
+            android:background="@drawable/bg_pill"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:text="…"
+            android:textSize="11sp"
             android:textStyle="bold"
             android:textColor="@color/textDim" />
     </LinearLayout>
 
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginStart="18dp"
+        android:layout_marginEnd="18dp"
+        android:background="@color/outline" />
+
+    <!-- =================================== tabs =================================== -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -70,7 +77,9 @@
         <ScrollView
             android:id="@+id/section_dashboard"
             android:layout_width="match_parent"
-            android:layout_height="match_parent">
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingBottom="8dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -78,163 +87,226 @@
                 android:orientation="vertical"
                 android:padding="16dp">
 
+                <!-- Hero: status, the message that needs attention, and the actions. -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:background="@color/card"
-                    android:padding="16dp">
+                    android:background="@drawable/bg_card_hero"
+                    android:padding="18dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <View
+                            android:id="@+id/dash_dot"
+                            android:layout_width="10dp"
+                            android:layout_height="10dp"
+                            android:layout_marginEnd="10dp"
+                            android:background="@drawable/bg_status_dot" />
+
+                        <TextView
+                            android:id="@+id/dash_ap"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="..."
+                            android:textSize="22sp"
+                            android:textStyle="bold"
+                            android:textColor="@color/textPrimary" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/dash_hint"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:padding="12dp"
+                        android:background="@drawable/bg_hint"
+                        android:textColor="@color/amber"
+                        android:textSize="13sp"
+                        android:lineSpacingExtra="2dp"
+                        android:visibility="gone"
+                        android:text="Hotspot is off. Switch it on from quick settings - the gateway takes over automatically the moment it appears." />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="16dp"
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/btn_start"
+                            style="@style/BtnPrimary"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="8dp"
+                            android:text="@string/btn_start" />
+
+                        <Button
+                            android:id="@+id/btn_stop"
+                            style="@style/BtnTonal"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:text="@string/btn_stop" />
+                    </LinearLayout>
+
+                    <Button
+                        android:id="@+id/btn_open_tether"
+                        style="@style/BtnOutline"
+                        android:layout_width="match_parent"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/btn_open_tether" />
+                </LinearLayout>
+
+                <!-- Gateway card -->
+                <TextView
+                    style="@style/SectionHeader"
+                    android:layout_marginTop="18dp"
+                    android:text="GATEWAY" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="@drawable/bg_card"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp">
 
                     <LinearLayout style="@style/StatRow">
                         <TextView style="@style/StatLabel" android:text="Root access" />
                         <TextView android:id="@+id/dash_root" style="@style/StatValue" android:text="..." />
                     </LinearLayout>
-                    <LinearLayout style="@style/StatRow">
-                        <TextView style="@style/StatLabel" android:text="Hotspot" />
-                        <TextView android:id="@+id/dash_ap" style="@style/StatValue" android:text="..." />
-                    </LinearLayout>
+
                     <LinearLayout style="@style/StatRow">
                         <TextView style="@style/StatLabel" android:text="Network created by" />
                         <TextView android:id="@+id/dash_ap_kind" style="@style/StatValue" android:text="..." />
                     </LinearLayout>
-                    <LinearLayout style="@style/StatRow">
-                        <TextView style="@style/StatLabel" android:text="Join (SSID / password)" />
-                        <TextView
-                            android:id="@+id/dash_ap_ssid"
-                            style="@style/StatValue"
-                            android:textIsSelectable="true"
-                            android:text="..." />
-                    </LinearLayout>
-                    <LinearLayout style="@style/StatRow">
-                        <TextView style="@style/StatLabel" android:text="Internet side (WAN)" />
-                        <TextView android:id="@+id/dash_wan" style="@style/StatValue" android:text="..." />
-                    </LinearLayout>
-                    <LinearLayout style="@style/StatRow">
-                        <TextView style="@style/StatLabel" android:text="Client side (LAN)" />
-                        <TextView android:id="@+id/dash_lan" style="@style/StatValue" android:text="..." />
-                    </LinearLayout>
-                    <LinearLayout style="@style/StatRow">
-                        <TextView style="@style/StatLabel" android:text="Captive portal" />
-                        <TextView android:id="@+id/dash_portal" style="@style/StatValue" android:text="..." />
-                    </LinearLayout>
-                    <LinearLayout style="@style/StatRow">
-                        <TextView style="@style/StatLabel" android:text="Clients online" />
-                        <TextView android:id="@+id/dash_clients" style="@style/StatValue" android:text="..." />
-                    </LinearLayout>
-                    <LinearLayout style="@style/StatRow">
-                        <TextView style="@style/StatLabel" android:text="Vouchers" />
-                        <TextView android:id="@+id/dash_vouchers" style="@style/StatValue" android:text="..." />
-                    </LinearLayout>
+
                     <LinearLayout style="@style/StatRow">
                         <TextView style="@style/StatLabel" android:text="Watchdog" />
                         <TextView android:id="@+id/dash_findings" style="@style/StatValue" android:text="..." />
                     </LinearLayout>
                 </LinearLayout>
 
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:layout_marginTop="12dp">
-
-                    <Button
-                        android:id="@+id/btn_start"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginEnd="6dp"
-                        android:text="@string/btn_start"
-                        android:textColor="@color/textPrimary"
-                        android:backgroundTint="@color/green" />
-
-                    <Button
-                        android:id="@+id/btn_stop"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="6dp"
-                        android:layout_marginEnd="6dp"
-                        android:text="@string/btn_stop"
-                        android:textColor="@color/textPrimary"
-                        android:backgroundTint="@color/red" />
-
-                    <Button
-                        android:id="@+id/btn_exit"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="6dp"
-                        android:text="@string/btn_exit"
-                        android:textColor="@color/textPrimary"
-                        android:backgroundTint="@color/red" />
-                </LinearLayout>
-
-                <Button
-                    android:id="@+id/btn_open_tether"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:text="@string/btn_open_tether"
-                    android:textColor="@color/textPrimary"
-                    android:backgroundTint="@color/accentDark" />
+                <!-- Join card: what customers type in to get online. -->
+                <TextView
+                    style="@style/SectionHeader"
+                    android:layout_marginTop="16dp"
+                    android:text="CUSTOMERS JOIN" />
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:layout_marginTop="6dp">
+                    android:orientation="vertical"
+                    android:background="@drawable/bg_card"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp">
 
-                    <Button
-                        android:id="@+id/btn_debugger"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginEnd="6dp"
-                        android:text="@string/btn_debugger"
-                        android:textColor="@color/textPrimary"
-                        android:backgroundTint="@color/chip" />
+                    <LinearLayout style="@style/StatRow">
+                        <TextView style="@style/StatLabel" android:text="WiFi name / password" />
+                        <TextView
+                            android:id="@+id/dash_ap_ssid"
+                            style="@style/StatValue"
+                            android:textIsSelectable="true"
+                            android:text="..." />
+                    </LinearLayout>
 
-                    <Button
-                        android:id="@+id/btn_copy_log"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="6dp"
-                        android:text="@string/btn_copy_log"
-                        android:textColor="@color/textPrimary"
-                        android:backgroundTint="@color/chip" />
+                    <LinearLayout style="@style/StatRow">
+                        <TextView style="@style/StatLabel" android:text="Captive portal" />
+                        <TextView android:id="@+id/dash_portal" style="@style/StatValue" android:text="..." />
+                    </LinearLayout>
+
+                    <LinearLayout style="@style/StatRow">
+                        <TextView style="@style/StatLabel" android:text="Clients online" />
+                        <TextView android:id="@+id/dash_clients" style="@style/StatValue" android:text="..." />
+                    </LinearLayout>
+
+                    <LinearLayout style="@style/StatRow">
+                        <TextView style="@style/StatLabel" android:text="Vouchers" />
+                        <TextView android:id="@+id/dash_vouchers" style="@style/StatValue" android:text="..." />
+                    </LinearLayout>
                 </LinearLayout>
 
+                <!-- Interfaces -->
                 <TextView
-                    android:id="@+id/dash_hint"
+                    style="@style/SectionHeader"
+                    android:layout_marginTop="16dp"
+                    android:text="INTERFACES" />
+
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:padding="12dp"
-                    android:background="@color/chip"
-                    android:textColor="@color/amber"
-                    android:textSize="13sp"
-                    android:visibility="gone"
-                    android:text="Hotspot is off. Switch it on from quick settings - the gateway takes over automatically the moment it appears." />
+                    android:orientation="vertical"
+                    android:background="@drawable/bg_card"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp">
 
-                <TextView
+                    <LinearLayout style="@style/StatRow">
+                        <TextView style="@style/StatLabel" android:text="Internet side (WAN)" />
+                        <TextView android:id="@+id/dash_wan" style="@style/StatValue" android:text="..." />
+                    </LinearLayout>
+
+                    <LinearLayout style="@style/StatRow">
+                        <TextView style="@style/StatLabel" android:text="Client side (LAN)" />
+                        <TextView android:id="@+id/dash_lan" style="@style/StatValue" android:text="..." />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Tools -->
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="16dp"
-                    android:text="Event log"
-                    android:textColor="@color/textDim"
-                    android:textSize="12sp"
-                    android:textStyle="bold"
-                    android:paddingBottom="6dp" />
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btn_debugger"
+                        style="@style/BtnOutline"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="6dp"
+                        android:text="@string/btn_debugger" />
+
+                    <Button
+                        android:id="@+id/btn_copy_log"
+                        style="@style/BtnOutline"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_marginStart="6dp"
+                        android:text="@string/btn_copy_log" />
+                </LinearLayout>
+
+                <Button
+                    android:id="@+id/btn_exit"
+                    style="@style/BtnDanger"
+                    android:layout_width="match_parent"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/btn_exit" />
+
+                <TextView
+                    style="@style/SectionHeader"
+                    android:layout_marginTop="20dp"
+                    android:text="EVENT LOG" />
 
                 <TextView
                     android:id="@+id/dash_log"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:background="@color/card"
-                    android:padding="12dp"
+                    android:background="@drawable/bg_log"
+                    android:padding="14dp"
                     android:fontFamily="monospace"
                     android:textColor="@color/textDim"
+                    android:lineSpacingExtra="3dp"
                     android:textSize="11sp"
                     android:textIsSelectable="true"
                     android:text="(no events yet)" />
@@ -246,7 +318,9 @@
             android:id="@+id/section_vouchers"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:visibility="gone">
+            android:visibility="gone"
+            android:clipToPadding="false"
+            android:paddingBottom="8dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -254,7 +328,9 @@
                 android:orientation="vertical"
                 android:padding="16dp">
 
-                <TextView style="@style/SectionHeader" android:text="Generate vouchers" />
+                <TextView
+                    style="@style/SectionHeader"
+                    android:text="QUICK PRESETS" />
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -262,88 +338,91 @@
                     android:orientation="horizontal">
 
                     <Button android:id="@+id/preset_1h" style="@style/PresetButton" android:text="1 Hour" />
-                    <Button android:id="@+id/preset_3h" style="@style/PresetButton" android:text="3 Hours" android:layout_marginStart="6dp" android:layout_marginEnd="6dp" />
+                    <Button android:id="@+id/preset_3h" style="@style/PresetButton" android:layout_marginStart="6dp" android:layout_marginEnd="6dp" android:text="3 Hours" />
                     <Button android:id="@+id/preset_24h" style="@style/PresetButton" android:text="1 Day" />
-                    <Button android:id="@+id/preset_7d" style="@style/PresetButton" android:text="7 Days" android:layout_marginStart="6dp" />
+                    <Button android:id="@+id/preset_7d" style="@style/PresetButton" android:layout_marginStart="6dp" android:text="7 Days" />
                 </LinearLayout>
-
-                <EditText
-                    android:id="@+id/gen_plan"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:hint="Plan name (e.g. 1 Hour - 2Mbps)"
-                    android:textColor="@color/textPrimary"
-                    android:textColorHint="@color/textDim"
-                    android:backgroundTint="@color/accentDark"
-                    android:textSize="14sp"
-                    android:inputType="text" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-
-                    <EditText
-                        android:id="@+id/gen_count"
-                        android:layout_width="0dp" android:layout_height="wrap_content"
-                        android:layout_weight="1" android:layout_marginEnd="6dp"
-                        android:hint="How many"
-                        android:textColor="@color/textPrimary"
-                        android:textColorHint="@color/textDim"
-                        android:backgroundTint="@color/accentDark"
-                        android:textSize="14sp" android:inputType="number" />
-
-                    <EditText
-                        android:id="@+id/gen_minutes"
-                        android:layout_width="0dp" android:layout_height="wrap_content"
-                        android:layout_weight="1" android:layout_marginStart="6dp"
-                        android:hint="Minutes"
-                        android:textColor="@color/textPrimary"
-                        android:textColorHint="@color/textDim"
-                        android:backgroundTint="@color/accentDark"
-                        android:textSize="14sp" android:inputType="number" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-
-                    <EditText
-                        android:id="@+id/gen_rate"
-                        android:layout_width="0dp" android:layout_height="wrap_content"
-                        android:layout_weight="1" android:layout_marginEnd="6dp"
-                        android:hint="Speed min (kbit/s)"
-                        android:textColor="@color/textPrimary"
-                        android:textColorHint="@color/textDim"
-                        android:backgroundTint="@color/accentDark"
-                        android:textSize="14sp" android:inputType="number" />
-
-                    <EditText
-                        android:id="@+id/gen_ceil"
-                        android:layout_width="0dp" android:layout_height="wrap_content"
-                        android:layout_weight="1" android:layout_marginStart="6dp"
-                        android:hint="Speed max (kbit/s)"
-                        android:textColor="@color/textPrimary"
-                        android:textColorHint="@color/textDim"
-                        android:backgroundTint="@color/accentDark"
-                        android:textSize="14sp" android:inputType="number" />
-                </LinearLayout>
-
-                <Button
-                    android:id="@+id/btn_generate"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="@string/btn_generate"
-                    android:textColor="@color/textPrimary"
-                    android:backgroundTint="@color/accent" />
 
                 <TextView
                     style="@style/SectionHeader"
-                    android:text="All vouchers"
-                    android:layout_marginTop="20dp" />
+                    android:layout_marginTop="18dp"
+                    android:text="BUILD A PLAN" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="@drawable/bg_card"
+                    android:padding="14dp">
+
+                    <EditText
+                        android:id="@+id/gen_plan"
+                        style="@style/Input"
+                        android:hint="Plan name (e.g. 1 Hour - 2Mbps)"
+                        android:inputType="text" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <EditText
+                            android:id="@+id/gen_count"
+                            style="@style/Input"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="6dp"
+                            android:hint="How many"
+                            android:inputType="number" />
+
+                        <EditText
+                            android:id="@+id/gen_minutes"
+                            style="@style/Input"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_marginStart="6dp"
+                            android:hint="Minutes"
+                            android:inputType="number" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <EditText
+                            android:id="@+id/gen_rate"
+                            style="@style/Input"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="6dp"
+                            android:hint="Speed min (kbit/s)"
+                            android:inputType="number" />
+
+                        <EditText
+                            android:id="@+id/gen_ceil"
+                            style="@style/Input"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_marginStart="6dp"
+                            android:hint="Speed max (kbit/s)"
+                            android:inputType="number" />
+                    </LinearLayout>
+
+                    <Button
+                        android:id="@+id/btn_generate"
+                        style="@style/BtnPrimary"
+                        android:layout_width="match_parent"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/btn_generate" />
+                </LinearLayout>
+
+                <TextView
+                    style="@style/SectionHeader"
+                    android:layout_marginTop="20dp"
+                    android:text="ALL VOUCHERS" />
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -351,8 +430,8 @@
                     android:orientation="horizontal">
 
                     <Button android:id="@+id/filter_all" style="@style/FilterButton" android:text="All" />
-                    <Button android:id="@+id/filter_unused" style="@style/FilterButton" android:text="Unused" android:layout_marginStart="6dp" android:layout_marginEnd="6dp" />
-                    <Button android:id="@+id/filter_active" style="@style/FilterButton" android:text="Active" android:layout_marginEnd="6dp" />
+                    <Button android:id="@+id/filter_unused" style="@style/FilterButton" android:layout_marginStart="6dp" android:layout_marginEnd="6dp" android:text="Unused" />
+                    <Button android:id="@+id/filter_active" style="@style/FilterButton" android:layout_marginEnd="6dp" android:text="Active" />
                     <Button android:id="@+id/filter_expired" style="@style/FilterButton" android:text="Expired" />
                 </LinearLayout>
 
@@ -360,16 +439,19 @@
                     android:id="@+id/voucher_list"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
                     android:nestedScrollingEnabled="false" />
             </LinearLayout>
         </ScrollView>
 
-        <!-- ============================ USERS ============================ -->
+        <!-- ============================== USERS ============================== -->
         <ScrollView
             android:id="@+id/section_users"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:visibility="gone">
+            android:visibility="gone"
+            android:clipToPadding="false"
+            android:paddingBottom="8dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -377,44 +459,72 @@
                 android:orientation="vertical"
                 android:padding="16dp">
 
-                <TextView style="@style/SectionHeader" android:text="Online now" />
+                <TextView
+                    style="@style/SectionHeader"
+                    android:text="ONLINE NOW" />
 
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/client_list"
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:nestedScrollingEnabled="false" />
+                    android:orientation="vertical"
+                    android:background="@drawable/bg_card"
+                    android:padding="8dp">
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/client_list"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:nestedScrollingEnabled="false" />
+                </LinearLayout>
 
                 <TextView
                     style="@style/SectionHeader"
-                    android:text="User profiles (saved devices)"
-                    android:layout_marginTop="20dp" />
+                    android:layout_marginTop="20dp"
+                    android:text="SAVED DEVICES" />
 
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/profile_list"
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:nestedScrollingEnabled="false" />
+                    android:orientation="vertical"
+                    android:background="@drawable/bg_card"
+                    android:padding="8dp">
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/profile_list"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:nestedScrollingEnabled="false" />
+                </LinearLayout>
 
                 <TextView
                     style="@style/SectionHeader"
-                    android:text="Recent sessions"
-                    android:layout_marginTop="20dp" />
+                    android:layout_marginTop="20dp"
+                    android:text="RECENT SESSIONS" />
 
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/session_list"
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:nestedScrollingEnabled="false" />
+                    android:orientation="vertical"
+                    android:background="@drawable/bg_card"
+                    android:padding="8dp">
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/session_list"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:nestedScrollingEnabled="false" />
+                </LinearLayout>
             </LinearLayout>
         </ScrollView>
 
-        <!-- ============================ SETTINGS ============================ -->
+        <!-- ============================= SETTINGS ============================= -->
         <ScrollView
             android:id="@+id/section_settings"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:visibility="gone">
+            android:visibility="gone"
+            android:clipToPadding="false"
+            android:paddingBottom="8dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -422,41 +532,44 @@
                 android:orientation="vertical"
                 android:padding="16dp">
 
-                <TextView style="@style/SectionHeader" android:text="Hotspot name &amp; password" />
                 <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Used when the app can start the hotspot by itself (Android 12+). On older Androids the phone's own hotspot settings apply."
-                    android:textColor="@color/textDim"
-                    android:textSize="12sp"
-                    android:paddingBottom="4dp" />
+                    style="@style/SectionHeader"
+                    android:text="HOTSPOT NAME &amp; PASSWORD" />
 
-                <EditText
-                    android:id="@+id/set_ssid"
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="Network name (SSID)"
-                    android:textColor="@color/textPrimary"
-                    android:textColorHint="@color/textDim"
-                    android:backgroundTint="@color/accentDark"
-                    android:textSize="14sp"
-                    android:inputType="text" />
+                    android:orientation="vertical"
+                    android:background="@drawable/bg_card"
+                    android:padding="14dp">
 
-                <EditText
-                    android:id="@+id/set_pass"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:hint="Password (8+ characters)"
-                    android:textColor="@color/textPrimary"
-                    android:textColorHint="@color/textDim"
-                    android:backgroundTint="@color/accentDark"
-                    android:textSize="14sp"
-                    android:inputType="textPassword" />
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Used when the app can start the hotspot by itself (Android 12+). On older Androids the phone's own hotspot settings apply - the dashboard always shows the name customers should join."
+                        android:textColor="@color/textDim"
+                        android:textSize="12sp"
+                        android:lineSpacingExtra="2dp"
+                        android:paddingBottom="10dp" />
+
+                    <EditText
+                        android:id="@+id/set_ssid"
+                        style="@style/Input"
+                        android:hint="Network name (SSID)"
+                        android:inputType="text" />
+
+                    <EditText
+                        android:id="@+id/set_pass"
+                        style="@style/Input"
+                        android:layout_marginTop="8dp"
+                        android:hint="Password (8+ characters)"
+                        android:inputType="textPassword" />
+                </LinearLayout>
 
                 <TextView
                     style="@style/SectionHeader"
-                    android:text="How the WiFi network is created"
-                    android:layout_marginTop="20dp" />
+                    android:layout_marginTop="20dp"
+                    android:text="HOW THE WIFI NETWORK IS CREATED" />
 
                 <TextView
                     android:layout_width="match_parent"
@@ -464,7 +577,8 @@
                     android:text="@string/ap_mode_help"
                     android:textColor="@color/textDim"
                     android:textSize="12sp"
-                    android:paddingBottom="6dp" />
+                    android:lineSpacingExtra="2dp"
+                    android:paddingBottom="8dp" />
 
                 <RadioGroup
                     android:id="@+id/set_ap_mode"
@@ -474,166 +588,194 @@
 
                     <RadioButton
                         android:id="@+id/mode_auto"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:buttonTint="@color/accent"
-                        android:textColor="@color/textPrimary"
-                        android:textSize="13sp"
-                        android:text="Automatic (try everything)" />
+                        style="@style/ModeRadio"
+                        android:layout_marginBottom="6dp"
+                        android:checked="true"
+                        android:text="Automatic (recommended)" />
 
                     <RadioButton
                         android:id="@+id/mode_netshare"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:buttonTint="@color/accent"
-                        android:textColor="@color/textPrimary"
-                        android:textSize="13sp"
-                        android:text="NetShare - WiFi Direct AP (no hotspot toggle)" />
+                        style="@style/ModeRadio"
+                        android:layout_marginBottom="6dp"
+                        android:text="NetShare - WiFi Direct AP" />
 
                     <RadioButton
                         android:id="@+id/mode_localonly"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:buttonTint="@color/accent"
-                        android:textColor="@color/textPrimary"
-                        android:textSize="13sp"
-                        android:text="Local-only hotspot API (no hotspot toggle)" />
+                        style="@style/ModeRadio"
+                        android:layout_marginBottom="6dp"
+                        android:text="Local-only hotspot API" />
 
                     <RadioButton
                         android:id="@+id/mode_system"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:buttonTint="@color/accent"
-                        android:textColor="@color/textPrimary"
-                        android:textSize="13sp"
-                        android:text="Android hotspot only (ap0)" />
+                        style="@style/ModeRadio"
+                        android:layout_marginBottom="6dp"
+                        android:text="Android hotspot only" />
 
                     <RadioButton
                         android:id="@+id/mode_rootap"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:buttonTint="@color/accent"
-                        android:textColor="@color/textPrimary"
-                        android:textSize="13sp"
+                        style="@style/ModeRadio"
+                        android:layout_marginBottom="6dp"
                         android:text="Root hostapd (experimental)" />
 
                     <RadioButton
                         android:id="@+id/mode_manual"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:buttonTint="@color/accent"
-                        android:textColor="@color/textPrimary"
-                        android:textSize="13sp"
-                        android:text="Do nothing - wait for the hotspot toggle" />
+                        style="@style/ModeRadio"
+                        android:text="Wait for the toggle" />
                 </RadioGroup>
 
                 <TextView
                     style="@style/SectionHeader"
-                    android:text="Interfaces (blank = automatic)"
-                    android:layout_marginTop="20dp" />
+                    android:layout_marginTop="20dp"
+                    android:text="INTERFACE PINS" />
 
-                <EditText
-                    android:id="@+id/set_wan"
+                <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="Internet side, e.g. ccmni1 (blank = auto)"
-                    android:textColor="@color/textPrimary"
-                    android:textColorHint="@color/textDim"
-                    android:backgroundTint="@color/accentDark"
-                    android:textSize="14sp"
-                    android:inputType="text" />
-
-                <EditText
-                    android:id="@+id/set_lan"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:hint="Client side, e.g. ap0 (blank = auto)"
-                    android:textColor="@color/textPrimary"
-                    android:textColorHint="@color/textDim"
-                    android:backgroundTint="@color/accentDark"
-                    android:textSize="14sp"
-                    android:inputType="text" />
+                    android:text="Leave blank to detect automatically. Detect fills both in from what the phone currently has."
+                    android:textColor="@color/textDim"
+                    android:textSize="12sp"
+                    android:lineSpacingExtra="2dp"
+                    android:paddingBottom="10dp" />
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:layout_marginTop="8dp">
+                    android:orientation="vertical"
+                    android:background="@drawable/bg_card"
+                    android:padding="14dp">
 
-                    <Button
-                        android:id="@+id/btn_detect"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginEnd="6dp"
-                        android:text="@string/btn_detect"
-                        android:textColor="@color/textPrimary"
-                        android:backgroundTint="@color/accentDark" />
+                    <EditText
+                        android:id="@+id/set_wan"
+                        style="@style/Input"
+                        android:hint="Internet interface (e.g. ccmni0)"
+                        android:inputType="text" />
 
-                    <Button
-                        android:id="@+id/btn_apply"
-                        android:layout_width="0dp"
+                    <EditText
+                        android:id="@+id/set_lan"
+                        style="@style/Input"
+                        android:layout_marginTop="8dp"
+                        android:hint="Hotspot interface (e.g. p2p0)"
+                        android:inputType="text" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="6dp"
-                        android:text="@string/btn_apply"
-                        android:textColor="@color/textPrimary"
-                        android:backgroundTint="@color/accent" />
+                        android:layout_marginTop="12dp"
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/btn_detect"
+                            style="@style/BtnOutline"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="6dp"
+                            android:text="@string/btn_detect" />
+
+                        <Button
+                            android:id="@+id/btn_apply"
+                            style="@style/BtnPrimary"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_marginStart="6dp"
+                            android:text="@string/btn_apply" />
+                    </LinearLayout>
                 </LinearLayout>
 
                 <TextView
                     style="@style/SectionHeader"
-                    android:text="Effective configuration"
-                    android:layout_marginTop="20dp" />
+                    android:layout_marginTop="20dp"
+                    android:text="EFFECTIVE CONFIGURATION" />
 
                 <TextView
                     android:id="@+id/set_env"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:background="@color/card"
-                    android:padding="12dp"
+                    android:background="@drawable/bg_log"
+                    android:padding="14dp"
                     android:fontFamily="monospace"
                     android:textColor="@color/textDim"
                     android:textSize="11sp"
+                    android:lineSpacingExtra="3dp"
                     android:textIsSelectable="true"
                     android:text="(not written yet)" />
 
                 <Button
                     android:id="@+id/btn_tether"
+                    style="@style/BtnTonal"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="20dp"
-                    android:text="@string/btn_open_tether"
-                    android:textColor="@color/textPrimary"
-                    android:backgroundTint="@color/accentDark" />
+                    android:layout_marginTop="16dp"
+                    android:text="@string/btn_open_tether" />
 
                 <Button
                     android:id="@+id/btn_debug_settings"
+                    style="@style/BtnOutline"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:text="@string/btn_debugger"
-                    android:textColor="@color/textPrimary"
-                    android:backgroundTint="@color/chip" />
+                    android:layout_marginTop="8dp"
+                    android:text="@string/btn_debugger" />
 
                 <Button
                     android:id="@+id/btn_permissions"
+                    style="@style/BtnOutline"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:text="@string/btn_permissions"
-                    android:textColor="@color/textPrimary"
-                    android:backgroundTint="@color/chip" />
+                    android:layout_marginTop="8dp"
+                    android:text="@string/btn_permissions" />
 
                 <Button
                     android:id="@+id/btn_stop_all"
+                    style="@style/BtnDanger"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:text="@string/btn_stop_all"
-                    android:textColor="@color/textPrimary"
-                    android:backgroundTint="@color/red" />
+                    android:layout_marginTop="8dp"
+                    android:text="@string/btn_stop_all" />
             </LinearLayout>
         </ScrollView>
     </FrameLayout>
+
+    <!-- ============================ bottom navigation ============================ -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="@drawable/bg_card"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="8dp"
+        android:elevation="8dp">
+
+        <TextView
+            android:id="@+id/tab_dashboard"
+            style="@style/NavItem"
+            android:drawableTop="@drawable/ic_dashboard"
+            android:drawableTint="@color/nav_icon_tint"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp"
+            android:text="@string/tab_dashboard" />
+
+        <TextView
+            android:id="@+id/tab_vouchers"
+            style="@style/NavItem"
+            android:drawableTop="@drawable/ic_voucher"
+            android:drawableTint="@color/nav_icon_tint"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp"
+            android:text="@string/tab_vouchers" />
+
+        <TextView
+            android:id="@+id/tab_users"
+            style="@style/NavItem"
+            android:drawableTop="@drawable/ic_users"
+            android:drawableTint="@color/nav_icon_tint"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp"
+            android:text="@string/tab_users" />
+
+        <TextView
+            android:id="@+id/tab_settings"
+            style="@style/NavItem"
+            android:drawableTop="@drawable/ic_settings"
+            android:drawableTint="@color/nav_icon_tint"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp"
+            android:text="@string/tab_settings" />
+    </LinearLayout>
 </LinearLayout>

@@ -90,4 +90,59 @@ class ApPlanTest {
         assertTrue(hint.contains("not that another group"))
         assertTrue(hint.contains("WiFi is off"))
     }
+
+    // ------------------------------------------------------- learning this radio
+
+    @Test
+    fun `the method that worked before leads the next attempt`() {
+        // What a chipset can start is a hardware question: on the Hot 8 the WiFi
+        // Direct group owner beacons, and re-learning that costs a system-hotspot
+        // attempt (10-20 s of framework calls) on every start.
+        val planned = ApPlan.steps(ApMode.AUTO, sdk = 28, wanIsWifi = false)
+        val ordered = ApPlan.withRememberedFirst(planned, ApPlan.Step.WIFI_DIRECT)
+
+        assertEquals(ApPlan.Step.WIFI_DIRECT, ordered.first())
+        assertEquals(planned.filter { it != ApPlan.Step.WIFI_DIRECT }, ordered.drop(1))
+        assertEquals(4, ordered.size)
+    }
+
+    @Test
+    fun `a remembered method that this mode never runs is ignored`() {
+        val planned = listOf(ApPlan.Step.SYSTEM)
+        assertEquals(planned, ApPlan.withRememberedFirst(planned, ApPlan.Step.WIFI_DIRECT))
+    }
+
+    @Test
+    fun `nothing remembered keeps the default order`() {
+        val planned = ApPlan.steps(ApMode.AUTO, sdk = 28, wanIsWifi = false)
+        assertEquals(planned, ApPlan.withRememberedFirst(planned, null))
+    }
+
+    @Test
+    fun `every AP kind that can repeat maps back to a step`() {
+        assertEquals(ApPlan.Step.SYSTEM, ApPlan.stepFor(ApKind.SYSTEM_HOTSPOT))
+        assertEquals(ApPlan.Step.LOCAL_ONLY, ApPlan.stepFor(ApKind.LOCAL_ONLY))
+        assertEquals(ApPlan.Step.WIFI_DIRECT, ApPlan.stepFor(ApKind.WIFI_DIRECT))
+        assertEquals(ApPlan.Step.ROOT_HOSTAPD, ApPlan.stepFor(ApKind.ROOT_HOSTAPD))
+        // A hotspot the operator flipped on (or a wired LAN) is not a method we
+        // can repeat, so it is never remembered.
+        assertNull(ApPlan.stepFor(ApKind.MANUAL_TOGGLE))
+        assertNull(ApPlan.stepFor(null))
+    }
+
+    @Test
+    fun `p2p0 is on the candidate list but is not evidence on its own`() {
+        assertTrue("p2p0" in ApPlan.AP_CANDIDATES)
+        // The trap the 14:42 log fell into: p2p0 is UP whenever WiFi is.
+        val snap = RadioSnapshot(
+            interfaces = listOf(
+                RadioSnapshot.Iface("p2p0", up = true, carrier = true, addresses = emptyList())
+            ),
+            defaultRoute = "ccmni0",
+            p2pIfaceProp = "p2p0",
+            frameworkApState = 11,
+            p2pGroupOwner = false
+        )
+        assertNull(ApEvidence.evaluate(snap, pin = null).iface)
+    }
 }
