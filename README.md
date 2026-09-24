@@ -181,11 +181,11 @@ rate limit on `/redeem`.
 
 _Regenerated automatically by `.github/workflows/readme.yml` — edit anything outside the markers instead._
 
-**1** open · **6** merged · **0** closed without merging · updated 2026-09-24 04:11 UTC
+**0** open · **7** merged · **0** closed without merging · updated 2026-09-24 04:17 UTC
 
 | PR | Title | Author | Branch | State | Updated |
 | --- | --- | --- | --- | --- | --- |
-[#7](https://github.com/rizwanahmedsora9-pixel/RNS/pull/7) | fix(build): repair Kotlin nullability errors blocking APK build | @arena-ai-coding-agent[bot] | `arena/01a0d192-rns` | 🟢 open | 2026-09-24
+[#7](https://github.com/rizwanahmedsora9-pixel/RNS/pull/7) | fix(build): repair Kotlin nullability errors blocking APK build | @arena-ai-coding-agent[bot] | `arena/01a0d192-rns` | 🟣 merged | 2026-09-24
 [#6](https://github.com/rizwanahmedsora9-pixel/RNS/pull/6) | CI: preserve Android toolchain and build diagnostics | @arena-ai-coding-agent[bot] | `arena/01a0d189-rns` | 🟣 merged | 2026-09-24
 [#5](https://github.com/rizwanahmedsora9-pixel/RNS/pull/5) | Master rebuild: stable NetShare engine (Phases 0-9) — fix Obtaining IP | @arena-ai-coding-agent[bot] | `arena/01a0d142-rns` | 🟣 merged | 2026-09-24
 [#4](https://github.com/rizwanahmedsora9-pixel/RNS/pull/4) | Debugger that records everything (copyable text) + NetShare-style hotspot with no toggle | @arena-ai-coding-agent[bot] | `arena/01a0d011-rns` | 🟣 merged | 2026-09-24
