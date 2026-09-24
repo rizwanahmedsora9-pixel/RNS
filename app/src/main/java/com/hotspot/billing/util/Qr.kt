@@ -5,7 +5,7 @@ import android.graphics.Color
 import android.util.Base64
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
-import com.google.zxing.QRCodeWriter
+import com.google.zxing.MultiFormatWriter
 import com.google.zxing.common.BitMatrix
 import java.io.ByteArrayOutputStream
 
@@ -27,7 +27,7 @@ object Qr {
     fun matrix(payload: String, modules: Int = 333): BitMatrix? = try {
         val hints = HashMap<EncodeHintType, Any>()
         hints[EncodeHintType.MARGIN] = 2
-        val raw = QRCodeWriter().encode(payload, BarcodeFormat.QR_CODE, modules, modules, hints)
+        val raw = MultiFormatWriter().encode(payload, BarcodeFormat.QR_CODE, modules, modules, hints)
         if (raw.width == modules && raw.height == modules) raw else scaleTo(raw, modules)
     } catch (e: Throwable) {
         null

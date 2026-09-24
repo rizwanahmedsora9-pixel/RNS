@@ -275,10 +275,26 @@ class WifiShareAp(private val context: Context) {
                 .build()
                 .also { log("ap[p2p]: creating WiFi Direct group \"$wantedSsid\" (own name/password, 2.4GHz)") }
         } else {
-            WifiP2pConfig().apply {
-                networkName = wantedSsid
-                passphrase = wantedPass
-            }.also { log("ap[p2p]: creating WiFi Direct group \"$wantedSsid\" (own name/password)") }
+            // API 26-28 (the Hot 8): no Builder, and the legacy setters are
+            // gone from the compile SDK - assign the fields the framework
+            // reads directly. If that fails too, Android picks the name and
+            // password, which are read back and shown anyway.
+            val config = WifiP2pConfig()
+            setConfigField(config, "networkName", wantedSsid, log)
+            setConfigField(config, "passphrase", wantedPass, log)
+            log("ap[p2p]: creating WiFi Direct group \"$wantedSsid\" (own name/password)")
+            config
+        }
+    }
+
+    /** Field assignment for the pre-29 config (the setters are not in the compile SDK). */
+    private fun setConfigField(target: Any, name: String, value: String?, log: (String) -> Unit) {
+        try {
+            val field = target.javaClass.getDeclaredField(name)
+            field.isAccessible = true
+            field.set(target, value)
+        } catch (e: Throwable) {
+            log("ap[p2p]: could not set $name (${e.javaClass.simpleName}) - Android picks it; read back afterwards")
         }
     }
 
@@ -381,6 +397,44 @@ class WifiShareAp(private val context: Context) {
 
     fun isWifiDirectActive(): Boolean = p2pGroupActive
 
+    /**
+     * Waits (up to 8 s) for the system to broadcast that WiFi Direct is
+     * ENABLED. createGroup on a state machine that has not finished enabling
+     * answers BUSY with no explanation, so the call site treats "no news" as
+     * "try anyway" - this is a short pause, not a gate.
+     */
+    private fun waitForP2pEnabled(log: (String) -> Unit): Boolean {
+        var enabled = false
+        val latch = CountDownLatch(1)
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val state = intent?.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1) ?: -1
+                if (state == WifiP2pManager.WIFI_P2P_STATE_ENABLED) enabled = true
+                latch.countDown()
+            }
+        }
+        try {
+            app.registerReceiver(receiver, IntentFilter(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION))
+        } catch (e: Throwable) {
+            log("ap[p2p]: could not register the P2P state receiver (${e.message})")
+            return false
+        }
+        try {
+            if (!latch.await(P2P_ENABLE_WAIT_MS, TimeUnit.MILLISECONDS)) {
+                log("ap[p2p]: no P2P state change within ${P2P_ENABLE_WAIT_MS / 1000}s")
+            }
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
+        try {
+            app.unregisterReceiver(receiver)
+        } catch (e: Throwable) {
+            // already gone
+        }
+        if (enabled) log("ap[p2p]: WiFi Direct enabled")
+        return enabled
+    }
+
     private fun requestGroup(channel: WifiP2pManager.Channel, log: (String) -> Unit): WifiP2pGroup? {
         val latch = CountDownLatch(1)
         var result: WifiP2pGroup? = null
@@ -472,6 +526,7 @@ class WifiShareAp(private val context: Context) {
         private const val REMOVE_GROUP_TIMEOUT_MS = 10_000L
         private const val INTERFACE_TIMEOUT_MS = 20_000L
         private const val CLEAN_STATE_SETTLE_MS = 1_000L
+        private const val P2P_ENABLE_WAIT_MS = 8_000L
 
         /** WifiP2pManager.ActionListener error codes, in plain words. */
         fun p2pFailure(reason: Int): String = when (reason) {
