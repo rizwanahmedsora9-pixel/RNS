@@ -181,11 +181,11 @@ rate limit on `/redeem`.
 
 _Regenerated automatically by `.github/workflows/readme.yml` — edit anything outside the markers instead._
 
-**1** open · **4** merged · **0** closed without merging · updated 2026-09-24 03:45 UTC
+**0** open · **5** merged · **0** closed without merging · updated 2026-09-24 03:47 UTC
 
 | PR | Title | Author | Branch | State | Updated |
 | --- | --- | --- | --- | --- | --- |
-[#5](https://github.com/rizwanahmedsora9-pixel/RNS/pull/5) | Master rebuild: stable NetShare engine (Phases 0-9) — fix Obtaining IP | @arena-ai-coding-agent[bot] | `arena/01a0d142-rns` | 🟢 open | 2026-09-24
+[#5](https://github.com/rizwanahmedsora9-pixel/RNS/pull/5) | Master rebuild: stable NetShare engine (Phases 0-9) — fix Obtaining IP | @arena-ai-coding-agent[bot] | `arena/01a0d142-rns` | 🟣 merged | 2026-09-24
 [#4](https://github.com/rizwanahmedsora9-pixel/RNS/pull/4) | Debugger that records everything (copyable text) + NetShare-style hotspot with no toggle | @arena-ai-coding-agent[bot] | `arena/01a0d011-rns` | 🟣 merged | 2026-09-24
 [#3](https://github.com/rizwanahmedsora9-pixel/RNS/pull/3) | Fix clients stuck obtaining an IP with no captive portal | @arena-ai-coding-agent[bot] | `arena/01a0cfe2-rns` | 🟣 merged | 2026-09-23
 [#2](https://github.com/rizwanahmedsora9-pixel/RNS/pull/2) | Admin UI (vouchers, user profiles), real hotspot control, foreground service, in-place updates | @arena-ai-coding-agent[bot] | `arena/01a0cfac-rns` | 🟣 merged | 2026-09-23
