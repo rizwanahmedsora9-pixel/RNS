@@ -108,8 +108,8 @@ class NetworkController(
 
         // 3. Wait for address (adopt Android's address, don't force)
         log("network: step 3/6 waiting for address on $lanIf")
-        val addressOk = apLauncher.waitForAddress(lanIf, 15_000, log)
-        if (!addressOk) {
+        val address = apLauncher.waitForAddress(lanIf, 15_000, log)
+        if (address == null) {
             AppLog.w(AppLog.TAG_NET, "network: no address on $lanIf after 15s, continuing (may still work)")
         }
 
@@ -125,6 +125,10 @@ class NetworkController(
             }
         }
         val dhcpConfig = DhcpManager.getConfig(lanIf)
+            ?: return StartResult.Failed(
+                "DHCP is running, but no LAN plan/config could be read on $lanIf — clients may not get a gateway",
+                Step.DHCP_START
+            )
         log("network: DHCP config gateway=${dhcpConfig.gateway} range=${dhcpConfig.startIp}-${dhcpConfig.endIp}")
 
         // 5. Start DNS (same dnsmasq, but verify)
