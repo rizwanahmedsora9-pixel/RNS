@@ -2,15 +2,26 @@
 <resources>
 
     <!--
-        One theme for the whole app, forced dark.
+        One theme for the whole app, always dark.
 
         The manifest used to point at Theme.AppCompat.DayNight, so on a phone in
         light mode every widget the framework draws - dialogs, EditText
-        underlines, radio buttons, the action bar - came out light on top of the
-        dark layout. AppTheme is Dark.NoActionBar: the widgets match the cards,
-        and the header in each screen replaces the stock action bar.
+        underlines, radio buttons - came out light on top of the dark layout.
+        AppTheme is built on `Theme.AppCompat` (the library's own dark base, so
+        dialogs and inputs are dark regardless of the system setting) with the
+        stock title bar switched off: the header in each screen replaces it.
+
+        Style parents are restricted to names this project has already linked
+        against - a guessed AppCompat style name is a hard build failure.
     -->
-    <style name="AppTheme" parent="Theme.AppCompat.Dark.NoActionBar">
+    <style name="AppTheme" parent="Theme.AppCompat">
+        <!-- Both spellings on purpose: the framework reads android:windowNoTitle,
+             AppCompat (which owns the decor this app actually draws) reads its own
+             windowNoTitle / windowActionBar. -->
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="windowActionBar">false</item>
         <item name="android:windowBackground">@color/bg</item>
         <item name="android:colorBackground">@color/bg</item>
         <item name="android:textColor">@color/textPrimary</item>
@@ -25,22 +36,6 @@
         <item name="colorControlNormal">@color/textDim</item>
         <item name="colorControlActivated">@color/accent</item>
         <item name="colorControlHighlight">@color/accentDark</item>
-        <item name="alertDialogTheme">@style/AppAlertDialog</item>
-    </style>
-
-    <style name="AppAlertDialog" parent="Theme.AppCompat.Dialog.Alert">
-        <item name="android:windowBackground">@color/cardRaised</item>
-        <item name="android:colorBackground">@color/cardRaised</item>
-        <item name="android:textColor">@color/textPrimary</item>
-        <item name="colorAccent">@color/accent</item>
-        <item name="buttonBarPositiveButtonStyle">@style/AppDialogButton</item>
-        <item name="buttonBarNegativeButtonStyle">@style/AppDialogButton</item>
-        <item name="buttonBarNeutralButtonStyle">@style/AppDialogButton</item>
-    </style>
-
-    <style name="AppDialogButton" parent="Widget.AppCompat.Button.Borderless.Colored">
-        <item name="android:textColor">@color/accent</item>
-        <item name="android:textSize">14sp</item>
     </style>
 
     <!-- A section title inside a tab. -->
