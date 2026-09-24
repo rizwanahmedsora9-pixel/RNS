@@ -34,6 +34,12 @@ object AppLog {
     const val TAG_LOGCAT = "logcat"
     const val TAG_CRASH = "CRASH"
     const val TAG_UI = "ui"
+    const val TAG_NET = "network"
+    const val TAG_BILLING = "billing"
+    const val TAG_DHCP = "dhcp"
+    const val TAG_DNS = "dns"
+    const val TAG_NAT = "nat"
+    const val TAG_FW = "firewall"
 
     private const val MAX_LINES = 6_000
     private const val MAX_FILE_BYTES = 3L * 1024 * 1024
