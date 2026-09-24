@@ -171,8 +171,11 @@
         <item name="android:stateListAnimator">@null</item>
     </style>
 
-    <!-- Text fields: rounded, filled, matching the cards. -->
-    <style name="Input" parent="Widget.AppCompat.EditText">
+    <!-- Text fields: rounded, filled, matching the cards. No explicit parent:
+         the theme still supplies everything these items do not (caret, input
+         type plumbing), and a hard-coded AppCompat widget style name is a
+         build-time reference that can vanish with the library version. -->
+    <style name="Input">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:minHeight">48dp</item>
@@ -187,8 +190,9 @@
         <item name="android:stateListAnimator">@null</item>
     </style>
 
-    <!-- Radio buttons for the hotspot mode list. -->
-    <style name="ModeRadio" parent="Widget.AppCompat.RadioButton">
+    <!-- Radio buttons for the hotspot mode list. Theme RadioButton supplies the
+         button drawable; these items only restyle the row around it. -->
+    <style name="ModeRadio">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:minHeight">46dp</item>
