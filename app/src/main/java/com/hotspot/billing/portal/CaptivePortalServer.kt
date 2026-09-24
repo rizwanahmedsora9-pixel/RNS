@@ -1,8 +1,10 @@
 package com.hotspot.billing.portal
 
 import com.hotspot.billing.net.ArpResolver
+import com.hotspot.billing.net.JoinConfig
 import com.hotspot.billing.net.RedeemResult
 import com.hotspot.billing.net.VoucherManager
+import com.hotspot.billing.util.Qr
 import fi.iki.elonen.NanoHTTPD
 
 /**
@@ -17,15 +19,34 @@ import fi.iki.elonen.NanoHTTPD
  *
  * HTTPS is deliberately NOT redirected here. scripts/setup_network.sh resets
  * port 443 so the client falls back to its plain-HTTP probe.
+ *
+ * The login page carries the one-tap join card (SSID + fixed passphrase +
+ * QR), because the passphrase is a technical formality - the voucher is the
+ * real gate.
  */
 class CaptivePortalServer(
     private val voucherManager: VoucherManager,
     private val gatewayIp: String = DEFAULT_GATEWAY,
+    private val ssid: String? = null,
+    private val pass: String? = null,
     port: Int = PORT,
     private val log: (String) -> Unit = {}
 ) : NanoHTTPD(port) {
 
     private val seen = HashMap<String, Long>()
+    private val firstContact = HashMap<String, Long>()
+
+    /** Computed once: the one-tap join QR for the portal page (may be null). */
+    private val joinQrBase64: String? = if (ssid != null && pass != null) {
+        try {
+            Qr.base64Png(JoinConfig.wifiQrPayload(ssid))
+        } catch (e: Throwable) {
+            log("portal: could not render the join QR (${e.javaClass.simpleName}: ${e.message}) - showing text only")
+            null
+        }
+    } else {
+        null
+    }
 
     // Probes send Accept-Encoding: gzip. A gzipped "200" is a failed probe on
     // several Android builds (timeout / no sheet), not a captive portal.
@@ -42,7 +63,7 @@ class CaptivePortalServer(
             // Probe or any other GET: the login page, status 200. Returning 204
             // (or redirecting to :8080) is what makes the OS decide there is
             // nothing to sign in to.
-            else -> page(Response.Status.OK, PortalPages.loginHtml())
+            else -> page(Response.Status.OK, PortalPages.loginHtml(ssid, pass, joinQrBase64))
         }
     }
 
@@ -50,6 +71,19 @@ class CaptivePortalServer(
         val ip = session.remoteIpAddress ?: "?"
         val key = "$ip ${session.uri}"
         val now = System.currentTimeMillis()
+        val firstEver = synchronized(firstContact) {
+            if (firstContact.containsKey(ip)) false
+            else {
+                firstContact[ip] = now
+                true
+            }
+        }
+        if (firstEver) {
+            // The e2e moment: a client that just got an IP is speaking to us.
+            // If the sign-in sheet did not pop for it, the probe lines that
+            // follow in this log are where to look.
+            log("portal: NEW CLIENT $ip - first contact (its OS sign-in sheet should now be up; watch for its probe + /redeem)")
+        }
         synchronized(seen) {
             val prev = seen[key] ?: 0L
             if (now - prev < LOG_INTERVAL_MS) return
@@ -72,12 +106,18 @@ class CaptivePortalServer(
             )
 
         return when (val result = voucherManager.redeem(code, mac, clientIp)) {
-            is RedeemResult.Success -> page(Response.Status.OK, PortalPages.successHtml(result.expiresAt))
-            RedeemResult.InvalidCode -> page(Response.Status.OK, PortalPages.errorHtml("Invalid voucher code."))
+            is RedeemResult.Success -> {
+                log("portal: voucher $code redeemed by $clientIp ($mac) - the sign-in sheet should close on refresh")
+                page(Response.Status.OK, PortalPages.successHtml(result.expiresAt))
+            }
+            RedeemResult.InvalidCode ->
+                page(Response.Status.OK, PortalPages.errorHtml("Invalid voucher code."))
             RedeemResult.AlreadyUsedOnAnotherDevice ->
                 page(Response.Status.OK, PortalPages.errorHtml("This voucher is already in use on another device."))
-            RedeemResult.Expired -> page(Response.Status.OK, PortalPages.errorHtml("This voucher has expired."))
-            RedeemResult.PoolExhausted -> page(Response.Status.OK, PortalPages.errorHtml("Network is full. Try again shortly."))
+            RedeemResult.Expired ->
+                page(Response.Status.OK, PortalPages.errorHtml("This voucher has expired."))
+            RedeemResult.PoolExhausted ->
+                page(Response.Status.OK, PortalPages.errorHtml("Network is full. Try again shortly."))
         }
     }
 

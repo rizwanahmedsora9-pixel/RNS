@@ -10,7 +10,6 @@ import android.net.wifi.p2p.WifiP2pConfig
 import android.net.wifi.p2p.WifiP2pGroup
 import android.net.wifi.p2p.WifiP2pManager
 import android.os.Build
-import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import com.hotspot.billing.debug.AppLog
@@ -19,22 +18,19 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
- * Creates a customer-facing WiFi network **without** the Android hotspot toggle.
+ * Creates the customer-facing WiFi network **without** the Android hotspot
+ * toggle: the phone becomes a WiFi Direct **group owner** (the technique
+ * NetShare uses), which is a real AP legacy clients can join. Android does
+ * not route the group either; root supplies the routing.
  *
- * Two framework mechanisms can do that while the phone stays connected to its own
- * WiFi (so it keeps receiving internet and can send it out at the same time):
+ * This used to be one of five fallback methods (system softap, local-only
+ * hotspot, WiFi Direct, root hostapd, manual wait). It is now the *only*
+ * method - a single reproducible path, with every attempt, callback and error
+ * code written to [AppLog] so the reason a start failed is never a mystery.
  *
- *  1. **LocalOnlyHotspot** (API 26+) - an AP the app may start on its own. Android
- *     deliberately gives it no internet; with root we add the NAT, DHCP and portal
- *     ourselves, which turns it into a normal hotspot.
- *  2. **WiFi Direct group owner** (the technique NetShare uses) - the phone becomes
- *     a P2P Group Owner, which is a real AP legacy clients can join. Android does
- *     not route it either; again root supplies the routing.
- *
- * Both need Location switched *on*: Android refuses to create any WiFi network
- * while location services are off, and reports it as a generic failure. Every
- * attempt, callback and error code here is written to [AppLog] so the reason is
- * never a mystery.
+ * WiFi Direct needs Location switched *on*: Android refuses to create any WiFi
+ * network while location services are off, and reports it as a generic failure
+ * (createGroup BUSY).
  *
  * Every method must be called from a background thread - it waits on framework
  * callbacks with a latch, which would ANR on the main thread.
@@ -43,194 +39,13 @@ class WifiShareAp(private val context: Context) {
 
     private val app = context.applicationContext
 
-    @Volatile private var lohsReservation: Any? = null
     @Volatile private var p2pManager: WifiP2pManager? = null
     @Volatile private var p2pChannel: WifiP2pManager.Channel? = null
     @Volatile private var p2pGroupActive = false
 
-    // ------------------------------------------------------------------ LocalOnlyHotspot
-
-    fun startLocalOnly(log: (String) -> Unit): ApHandle? {
-        if (Build.VERSION.SDK_INT < 26) {
-            log("ap[lohs]: needs Android 8.0+, this device is API ${Build.VERSION.SDK_INT}")
-            return null
-        }
-        if (isMainThread()) {
-            log("ap[lohs]: BUG - called on the main thread, refusing (would freeze the UI)")
-            return null
-        }
-        if (!ApRadio.hasLocationPermission(app)) {
-            log(
-                "ap[lohs]: skipped - Location permission is not granted. " +
-                    "startLocalOnlyHotspot throws SecurityException (Coarse Location) instead of a callback."
-            )
-            return null
-        }
-        val wifi = app.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-        if (wifi == null) {
-            log("ap[lohs]: no WifiManager on this device")
-            return null
-        }
-        log("ap[lohs]: wifi enabled=${wifi.isWifiEnabled} - requesting a local-only hotspot")
-        if (!wifi.isWifiEnabled) {
-            log("ap[lohs]: WiFi is OFF - not calling startLocalOnlyHotspot (the driver refuses, and the error is generic)")
-            return null
-        }
-
-        val before = interfaceNames()
-        val latch = CountDownLatch(1)
-        var failure = -1
-        var reservation: WifiManager.LocalOnlyHotspotReservation? = null
-        val handler = Handler(Looper.getMainLooper())
-
-        try {
-            if (Build.VERSION.SDK_INT >= 26) {
-                wifi.startLocalOnlyHotspot(object : WifiManager.LocalOnlyHotspotCallback() {
-                    override fun onStarted(res: WifiManager.LocalOnlyHotspotReservation?) {
-                        reservation = res
-                        AppLog.i(AppLog.TAG_AP, "lohs: onStarted (reservation=$res)")
-                        latch.countDown()
-                    }
-
-                    override fun onFailed(reason: Int) {
-                        failure = reason
-                        AppLog.w(AppLog.TAG_AP, "lohs: onFailed reason=$reason (${lohsFailure(reason)})")
-                        latch.countDown()
-                    }
-
-                    override fun onStopped() {
-                        lohsReservation = null
-                        AppLog.w(
-                            AppLog.TAG_AP,
-                            "lohs: onStopped - the system took the AP away (mode change / user action)"
-                        )
-                    }
-                }, handler)
-            }
-        } catch (e: Throwable) {
-            log("ap[lohs]: startLocalOnlyHotspot threw ${e.javaClass.simpleName}: ${e.message}")
-            AppLog.e(AppLog.TAG_AP, "lohs: request failed", e)
-            return null
-        }
-
-        if (!latch.await(CALLBACK_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-            log("ap[lohs]: no callback within ${CALLBACK_TIMEOUT_MS / 1000}s - giving up on this method")
-            return null
-        }
-        if (failure != -1) {
-            log("ap[lohs]: FAILED - ${lohsFailure(failure)}")
-            hintForLohsFailure(failure, log)
-            return null
-        }
-        // Local val, not the captured var: the framework writes the var from the
-        // callback thread, so the compiler will not smart-cast it.
-        val granted = reservation
-        if (granted == null) {
-            log("ap[lohs]: callback said started but handed back no reservation")
-            return null
-        }
-        lohsReservation = granted
-
-        val config = lohsCredentials(granted, log)
-        val wan = try {
-            RootShell.defaultRouteInterface()
-        } catch (e: Throwable) {
-            null
-        }
-        val iface = discoverInterface(before, wan, INTERFACE_TIMEOUT_MS, log)
-        if (iface == null) {
-            log("ap[lohs]: hotspot started but no interface appeared within " +
-                "${INTERFACE_TIMEOUT_MS / 1000}s - releasing it")
-            releaseLocalOnly(log)
-            return null
-        }
-        log("ap[lohs]: UP on $iface - ${config.ssid ?: "SSID unknown"} / ${config.passphrase ?: "?"}")
-        return ApHandle(
-            kind = ApKind.LOCAL_ONLY,
-            interfaceName = iface,
-            ssid = config.ssid,
-            password = config.passphrase,
-            detail = "local-only hotspot on $iface" +
-                (config.channel?.let { ", channel $it" } ?: ""),
-            onClose = { releaseLocalOnly { } }
-        )
-    }
-
-    fun releaseLocalOnly(log: (String) -> Unit) {
-        val reservation = lohsReservation ?: return
-        lohsReservation = null
-        try {
-            if (Build.VERSION.SDK_INT >= 26) {
-                (reservation as WifiManager.LocalOnlyHotspotReservation).close()
-                log("ap[lohs]: reservation closed")
-            }
-        } catch (e: Throwable) {
-            log("ap[lohs]: closing the reservation threw ${e.javaClass.simpleName}: ${e.message}")
-        }
-    }
-
-    /**
-     * The SSID/password of a local-only hotspot.
-     *
-     * Android 11+ exposes [android.net.wifi.SoftApConfiguration]; on Android 8-10
-     * `getWifiConfiguration()` (public since API 26, deprecated in 30) carries them.
-     * If the framework hands back nothing, the hostapd config the system itself
-     * wrote is read with root - the operator always gets told what to join.
-     */
-    @Suppress("DEPRECATION")
-    private fun lohsCredentials(reservation: Any, log: (String) -> Unit): ApConfigText.ApConfig {
-        val typed = reservation as WifiManager.LocalOnlyHotspotReservation
-
-        if (Build.VERSION.SDK_INT >= 30) {
-            try {
-                val softAp = typed.softApConfiguration
-                val ssid = softAp.ssid
-                val pass = softAp.passphrase
-                if (!ssid.isNullOrBlank()) {
-                    log("ap[lohs]: credentials from SoftApConfiguration")
-                    return ApConfigText.ApConfig(ssid = unquote(ssid), passphrase = pass)
-                }
-            } catch (e: Throwable) {
-                log("ap[lohs]: getSoftApConfiguration threw ${e.javaClass.simpleName}: ${e.message}")
-            }
-        }
-
-        try {
-            val wifiConfig = typed.wifiConfiguration
-            val ssid = wifiConfig?.SSID
-            val pass = wifiConfig?.preSharedKey
-            if (!ssid.isNullOrBlank()) {
-                log("ap[lohs]: credentials from WifiConfiguration")
-                return ApConfigText.ApConfig(ssid = unquote(ssid), passphrase = pass)
-            }
-            log("ap[lohs]: getWifiConfiguration() returned nothing usable")
-        } catch (e: Throwable) {
-            log("ap[lohs]: getWifiConfiguration() threw ${e.javaClass.simpleName}: ${e.message}")
-        }
-
-        val fromHostapd = hostapdConfig()
-        if (fromHostapd != null && fromHostapd.ssid != null) {
-            log("ap[lohs]: credentials read from the system hostapd.conf (root)")
-            return fromHostapd
-        }
-        log("ap[lohs]: could not read the SSID/password - open the debugger's full report to see hostapd.conf")
-        return ApConfigText.ApConfig()
-    }
-
-    /** WifiConfiguration.SSID is stored quoted (`"AndroidShare_3012"`). */
-    private fun unquote(value: String): String = value.trim().removeSurrounding("\"")
-
     // ------------------------------------------------------------------ WiFi Direct (NetShare)
 
-    fun startWifiDirect(ssid: String?, pass: String?, log: (String) -> Unit): ApHandle? =
-        startWifiDirect(ssid, pass, log, attempt = 0)
-
-    private fun startWifiDirect(
-        ssid: String?,
-        pass: String?,
-        log: (String) -> Unit,
-        attempt: Int
-    ): ApHandle? {
+    fun startWifiDirect(ssid: String?, pass: String?, log: (String) -> Unit): ApHandle? {
         if (isMainThread()) {
             log("ap[p2p]: BUG - called on the main thread, refusing (would freeze the UI)")
             return null
@@ -242,8 +57,8 @@ class WifiShareAp(private val context: Context) {
         val wifi = app.getSystemService(Context.WIFI_SERVICE) as? WifiManager
         if (wifi != null && !wifi.isWifiEnabled) {
             log(
-                "ap[p2p]: skipped - WiFi is off. " +
-                    ApPlan.p2pBusyHint(wifiEnabled = false, locationPermission = true, locationServicesOn = true)
+                "ap[p2p]: skipped - WiFi is off. createGroup returns BUSY (reason 2) " +
+                    "while the radio is off; that is the disabled state, not another group."
             )
             return null
         }
@@ -275,85 +90,52 @@ class WifiShareAp(private val context: Context) {
             return null
         }
 
+        // The Hot 8 log: createGroup answered reason=2 (BUSY) on *every* attempt,
+        // even after a full HAL re-init - a leftover P2P group, not a transient
+        // conflict. So every createGroup attempt starts from a confirmed clean
+        // P2P state, with removeGroup in between.
+        if (!ensureCleanP2pState(channel, log)) {
+            log("ap[p2p]: P2P state is not clean - createGroup would be refused; tap Start to retry")
+            return null
+        }
+
         val before = interfaceNames()
         val wantedSsid = ApConfigText.normalizeDirectSsid(ssid)
         val wantedPass = ApConfigText.sanitizePassphrase(pass)
-        val latch = CountDownLatch(1)
-        var failure = -1
+        var created = tryCreateGroup(manager, channel, wantedSsid, wantedPass, log)
 
-        val listener = object : WifiP2pManager.ActionListener {
-            override fun onSuccess() {
-                AppLog.i(AppLog.TAG_AP, "p2p: createGroup accepted")
-                latch.countDown()
+        if (created == null) {
+            // Whatever BUSY / NETWORK_ALREADY_CONNECTED meant, a group is in the
+            // way: remove it, confirm the state is clean, and attempt once more.
+            log("ap[p2p]: first createGroup failed - removing any group and retrying once")
+            try {
+                Thread.sleep(1_000)
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return null
             }
-
-            override fun onFailure(reason: Int) {
-                failure = reason
-                AppLog.w(AppLog.TAG_AP, "p2p: createGroup refused, reason=$reason (${p2pFailure(reason)})")
-                latch.countDown()
+            val fresh = freshChannel(manager, log)
+            if (fresh != null && ensureCleanP2pState(fresh, log)) {
+                created = tryCreateGroup(manager, fresh, wantedSsid, wantedPass, log)
             }
         }
 
-        try {
-            if (Build.VERSION.SDK_INT >= 29) {
-                val config = WifiP2pConfig.Builder()
-                    .setNetworkName(wantedSsid)
-                    .setPassphrase(wantedPass)
-                    .setGroupOperatingBand(WifiP2pConfig.GROUP_OWNER_BAND_2GHZ)
-                    .enablePersistentMode(false)
-                    .build()
-                log("ap[p2p]: creating WiFi Direct group \"$wantedSsid\" (own name/password, 2.4GHz)")
-                manager.createGroup(channel, config, listener)
-            } else {
-                log("ap[p2p]: creating a WiFi Direct group (Android picks the DIRECT-xx name and password)")
-                manager.createGroup(channel, listener)
-            }
-        } catch (e: Throwable) {
-            log("ap[p2p]: createGroup threw ${e.javaClass.simpleName}: ${e.message}")
-            AppLog.e(AppLog.TAG_AP, "p2p: createGroup threw", e)
+        if (created == null) {
+            log("ap[p2p]: createGroup still refused after removeGroup + clean-state retry")
             return null
         }
 
-        if (!latch.await(CALLBACK_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-            log("ap[p2p]: no callback within ${CALLBACK_TIMEOUT_MS / 1000}s - giving up on this method")
-            return null
-        }
-        if (failure != -1) {
-            log("ap[p2p]: FAILED - ${p2pFailure(failure)}")
-            hintForP2pFailure(failure, log)
-            if (failure == WifiP2pManager.BUSY) {
-                val existing = requestGroup(channel, log)
-                if (existing != null && existing.isGroupOwner) {
-                    log("ap[p2p]: BUSY because a group already exists - adopting it")
-                    return handleFromGroup(existing, before, wantedSsid, wantedPass, log)
-                }
-                if (attempt == 0) {
-                    log("ap[p2p]: no existing group - dropping the channel and retrying once")
-                    p2pChannel = null
-                    try {
-                        Thread.sleep(1_500)
-                    } catch (e: InterruptedException) {
-                        Thread.currentThread().interrupt()
-                        return null
-                    }
-                    return startWifiDirect(ssid, pass, log, attempt = 1)
-                }
-                log("ap[p2p]: still BUSY with no group. WiFi Direct is disabled, not held by another app.")
-            }
-            return null
-        }
-
-        val group = requestGroup(channel, log)
-        val realSsid = group?.networkName ?: wantedSsid
-        val realPass = group?.passphrase ?: wantedPass
-        log("ap[p2p]: group formed - \"$realSsid\" / $realPass (group owner=${group?.isGroupOwner})")
+        val handle = created.handle
+        val realSsid = handle.ssid
+        val realPass = handle.password
+        log("ap[p2p]: group formed - \"$realSsid\" / $realPass (group owner confirmed)")
 
         val wan = try {
             RootShell.defaultRouteInterface()
         } catch (e: Throwable) {
             null
         }
-        var iface = hiddenInterfaceName(group)
+        var iface = hiddenInterfaceName(created.group)
         if (iface == null) {
             iface = discoverInterface(before, wan, INTERFACE_TIMEOUT_MS, log)
         } else {
@@ -377,78 +159,223 @@ class WifiShareAp(private val context: Context) {
         )
     }
 
-    private fun handleFromGroup(
-        group: android.net.wifi.p2p.WifiP2pGroup,
-        before: List<String>,
+    /** The outcome of one successful createGroup: the handle plus the live group. */
+    private class CreatedGroup(val handle: ApHandle, val group: WifiP2pGroup?)
+
+    /**
+     * One createGroup attempt. Returns a handle carrying the REAL ssid/password
+     * (read back from the group, because on API < 29 Android may pick them)
+     * and the group, or null when the framework refused it.
+     */
+    private fun tryCreateGroup(
+        manager: WifiP2pManager,
+        channel: WifiP2pManager.Channel,
         wantedSsid: String,
         wantedPass: String,
         log: (String) -> Unit
-    ): ApHandle? {
-        val realSsid = group.networkName ?: wantedSsid
-        val realPass = group.passphrase ?: wantedPass
-        val wan = try { RootShell.defaultRouteInterface() } catch (e: Throwable) { null }
-        var iface = hiddenInterfaceName(group)
-        if (iface == null) iface = discoverInterface(before, wan, INTERFACE_TIMEOUT_MS, log)
-        else log("ap[p2p]: group reports interface $iface")
-        if (iface == null) {
-            log("ap[p2p]: group exists but no interface appeared")
+    ): CreatedGroup? {
+        val config = buildGroupConfig(wantedSsid, wantedPass, log)
+        val latch = CountDownLatch(1)
+        var failure = -1
+        var refusedReason: Int? = null
+
+        val listener = object : WifiP2pManager.ActionListener {
+            override fun onSuccess() {
+                AppLog.i(AppLog.TAG_AP, "p2p: createGroup accepted")
+                latch.countDown()
+            }
+
+            override fun onFailure(reason: Int) {
+                refusedReason = reason
+                failure = reason
+                AppLog.w(AppLog.TAG_AP, "p2p: createGroup refused, reason=$reason (${p2pFailure(reason)})")
+                latch.countDown()
+            }
+        }
+
+        try {
+            requestCreateGroup(manager, channel, config, listener)
+        } catch (e: Throwable) {
+            log("ap[p2p]: createGroup threw ${e.javaClass.simpleName}: ${e.message}")
+            AppLog.e(AppLog.TAG_AP, "p2p: createGroup threw", e)
             return null
         }
-        p2pGroupActive = true
-        return ApHandle(
-            kind = ApKind.WIFI_DIRECT,
-            interfaceName = iface,
-            ssid = realSsid,
-            password = realPass,
-            detail = "WiFi Direct group on $iface (adopted)",
-            onClose = { releaseWifiDirect { } }
+
+        if (!latch.await(CALLBACK_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+            log("ap[p2p]: no callback within ${CALLBACK_TIMEOUT_MS / 1000}s - giving up on this attempt")
+            return null
+        }
+        if (failure != -1) {
+            log("ap[p2p]: FAILED - ${p2pFailure(failure)}")
+            hintForP2pFailure(refusedReason ?: failure, log)
+            return null
+        }
+
+        val group = requestGroup(channel, log)
+        val realSsid = group?.networkName ?: wantedSsid
+        val realPass = group?.passphrase ?: wantedPass
+        if (group == null) {
+            log("ap[p2p]: createGroup succeeded but the group is not readable yet - adopting the requested credentials")
+        }
+        return CreatedGroup(
+            ApHandle(
+                kind = ApKind.WIFI_DIRECT,
+                interfaceName = null,
+                ssid = realSsid,
+                password = realPass,
+                detail = "WiFi Direct group (interface discovered separately)"
+            ),
+            group
         )
     }
 
     /**
-     * WIFI_P2P_STATE_CHANGED_ACTION is sticky, so the current state arrives
-     * as soon as we register. createGroup returns BUSY while this is disabled.
+     * API 29+ exposes `createGroup(channel, config, listener)` publicly. On API
+     * 28 (the Hot 8) the same method exists but is hidden - call it by
+     * reflection, and when that build has neither, fall back to the plain
+     * createGroup and let Android pick the name and password (they are read
+     * back and shown, so joining is still one tap).
      */
-    private fun waitForP2pEnabled(log: (String) -> Unit): Boolean {
-        val filter = IntentFilter(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION)
-        val latch = java.util.concurrent.CountDownLatch(1)
-        var enabled = false
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent) {
-                val state = intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1)
-                if (state == WifiP2pManager.WIFI_P2P_STATE_ENABLED) {
-                    enabled = true
-                    latch.countDown()
+    private fun requestCreateGroup(
+        manager: WifiP2pManager,
+        channel: WifiP2pManager.Channel,
+        config: WifiP2pConfig,
+        listener: WifiP2pManager.ActionListener
+    ) {
+        if (Build.VERSION.SDK_INT >= 29) {
+            manager.createGroup(channel, config, listener)
+            return
+        }
+        try {
+            val hidden = manager.javaClass.getMethod(
+                "createGroup",
+                WifiP2pManager.Channel::class.java,
+                WifiP2pConfig::class.java,
+                WifiP2pManager.ActionListener::class.java
+            )
+            hidden.invoke(manager, channel, config, listener)
+            AppLog.i(AppLog.TAG_AP, "p2p: used the hidden createGroup(config) variant - name and password are ours")
+        } catch (e: Throwable) {
+            AppLog.i(
+                AppLog.TAG_AP,
+                "p2p: no createGroup(config) on this build (${e.javaClass.simpleName}) - " +
+                    "Android picks the name and password; they will be read back and shown"
+            )
+            manager.createGroup(channel, listener)
+        }
+    }
+
+    private fun buildGroupConfig(wantedSsid: String, wantedPass: String, log: (String) -> Unit): WifiP2pConfig {
+        return if (Build.VERSION.SDK_INT >= 29) {
+            WifiP2pConfig.Builder()
+                .setNetworkName(wantedSsid)
+                .setPassphrase(wantedPass)
+                .setGroupOperatingBand(WifiP2pConfig.GROUP_OWNER_BAND_2GHZ)
+                .enablePersistentMode(false)
+                .build()
+                .also { log("ap[p2p]: creating WiFi Direct group \"$wantedSsid\" (own name/password, 2.4GHz)") }
+        } else {
+            // API 26-28 (the Hot 8): no Builder, and the legacy setters are
+            // gone from the compile SDK - assign the fields the framework
+            // reads directly. If that fails too, Android picks the name and
+            // password, which are read back and shown anyway.
+            val config = WifiP2pConfig()
+            setConfigField(config, "networkName", wantedSsid, log)
+            setConfigField(config, "passphrase", wantedPass, log)
+            log("ap[p2p]: creating WiFi Direct group \"$wantedSsid\" (own name/password)")
+            config
+        }
+    }
+
+    /** Field assignment for the pre-29 config (the setters are not in the compile SDK). */
+    private fun setConfigField(target: Any, name: String, value: String?, log: (String) -> Unit) {
+        try {
+            val field = target.javaClass.getDeclaredField(name)
+            field.isAccessible = true
+            field.set(target, value)
+        } catch (e: Throwable) {
+            log("ap[p2p]: could not set $name (${e.javaClass.simpleName}) - Android picks it; read back afterwards")
+        }
+    }
+
+    /**
+     * Removes any existing group and waits until `requestGroupInfo` confirms
+     * there is none. The caller only attempts createGroup after this returns
+     * true, so a leftover group (reason=2 BUSY on every attempt) can never
+     * block us.
+     */
+    private fun ensureCleanP2pState(channel: WifiP2pManager.Channel, log: (String) -> Unit): Boolean {
+        var group = requestGroup(channel, log)
+        if (group != null) {
+            log("ap[p2p]: leftover group present (\"${group.networkName}\", owner=${group.isGroupOwner}) - removing before createGroup")
+            if (!requestRemoveGroup(channel, log)) {
+                log("ap[p2p]: removeGroup refused on this channel - dropping the channel and retrying once")
+                p2pChannel = null
+                val fresh = freshChannel(p2pManager, log) ?: return false
+                group = requestGroup(fresh, log)
+                if (group != null) {
+                    if (!requestRemoveGroup(fresh, log) || requestGroup(fresh, log) != null) {
+                        log("ap[p2p]: the leftover group survived removeGroup")
+                        return false
+                    }
                 }
             }
         }
-        val sticky = try {
-            if (Build.VERSION.SDK_INT >= 33) {
-                app.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
-            } else {
-                @Suppress("UnspecifiedRegisterReceiverFlag")
-                app.registerReceiver(receiver, filter)
-            }
-        } catch (e: Throwable) {
-            log("ap[p2p]: could not listen for WiFi Direct state (${e.message})")
+        // Give the P2P state machine a beat, then confirm with a fresh query.
+        try {
+            Thread.sleep(CLEAN_STATE_SETTLE_MS)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
             return false
         }
-        val stickyState = sticky?.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1) ?: -1
-        if (stickyState == WifiP2pManager.WIFI_P2P_STATE_ENABLED) enabled = true
-        if (!enabled) {
-            try {
-                latch.await(6, java.util.concurrent.TimeUnit.SECONDS)
-            } catch (e: InterruptedException) {
-                Thread.currentThread().interrupt()
-            }
+        val confirm = requestGroup(channel, log)
+        return if (confirm == null) {
+            log("ap[p2p]: P2P state confirmed clean - no group")
+            true
+        } else {
+            log("ap[p2p]: a group is still present after removeGroup (\"${confirm.networkName}\")")
+            false
         }
+    }
+
+    private fun requestRemoveGroup(channel: WifiP2pManager.Channel, log: (String) -> Unit): Boolean {
+        val manager = p2pManager ?: return false
+        val latch = CountDownLatch(1)
+        var ok = false
         try {
-            app.unregisterReceiver(receiver)
+            manager.removeGroup(channel, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() {
+                    ok = true
+                    AppLog.i(AppLog.TAG_AP, "p2p: removeGroup confirmed")
+                    latch.countDown()
+                }
+
+                override fun onFailure(reason: Int) {
+                    AppLog.w(AppLog.TAG_AP, "p2p: removeGroup failed reason=$reason (${p2pFailure(reason)})")
+                    latch.countDown()
+                }
+            })
         } catch (e: Throwable) {
-            // already unregistered
+            log("ap[p2p]: removeGroup threw ${e.javaClass.simpleName}: ${e.message}")
+            return false
         }
-        log(if (enabled) "ap[p2p]: WiFi Direct is enabled" else "ap[p2p]: WiFi Direct is still disabled")
-        return enabled
+        if (!latch.await(REMOVE_GROUP_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+            log("ap[p2p]: removeGroup never answered within ${REMOVE_GROUP_TIMEOUT_MS / 1000}s")
+            return false
+        }
+        log(if (ok) "ap[p2p]: removeGroup confirmed" else "ap[p2p]: removeGroup failed")
+        return ok
+    }
+
+    private fun freshChannel(manager: WifiP2pManager?, log: (String) -> Unit): WifiP2pManager.Channel? {
+        if (manager == null) return null
+        p2pChannel = null
+        val channel = p2pChannel ?: manager.initialize(app, Looper.getMainLooper()) {
+            p2pGroupActive = false
+            AppLog.w(AppLog.TAG_AP, "p2p: channel disconnected - the WiFi Direct group is gone")
+        }
+        p2pChannel = channel
+        return channel
     }
 
     fun releaseWifiDirect(log: (String) -> Unit) {
@@ -470,6 +397,44 @@ class WifiShareAp(private val context: Context) {
 
     fun isWifiDirectActive(): Boolean = p2pGroupActive
 
+    /**
+     * Waits (up to 8 s) for the system to broadcast that WiFi Direct is
+     * ENABLED. createGroup on a state machine that has not finished enabling
+     * answers BUSY with no explanation, so the call site treats "no news" as
+     * "try anyway" - this is a short pause, not a gate.
+     */
+    private fun waitForP2pEnabled(log: (String) -> Unit): Boolean {
+        var enabled = false
+        val latch = CountDownLatch(1)
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val state = intent?.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1) ?: -1
+                if (state == WifiP2pManager.WIFI_P2P_STATE_ENABLED) enabled = true
+                latch.countDown()
+            }
+        }
+        try {
+            app.registerReceiver(receiver, IntentFilter(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION))
+        } catch (e: Throwable) {
+            log("ap[p2p]: could not register the P2P state receiver (${e.message})")
+            return false
+        }
+        try {
+            if (!latch.await(P2P_ENABLE_WAIT_MS, TimeUnit.MILLISECONDS)) {
+                log("ap[p2p]: no P2P state change within ${P2P_ENABLE_WAIT_MS / 1000}s")
+            }
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
+        try {
+            app.unregisterReceiver(receiver)
+        } catch (e: Throwable) {
+            // already gone
+        }
+        if (enabled) log("ap[p2p]: WiFi Direct enabled")
+        return enabled
+    }
+
     private fun requestGroup(channel: WifiP2pManager.Channel, log: (String) -> Unit): WifiP2pGroup? {
         val latch = CountDownLatch(1)
         var result: WifiP2pGroup? = null
@@ -486,7 +451,7 @@ class WifiShareAp(private val context: Context) {
             log("ap[p2p]: requestGroupInfo never answered")
             return null
         }
-        if (result == null) log("ap[p2p]: requestGroupInfo returned null (group not visible yet)")
+        if (result == null) log("ap[p2p]: requestGroupInfo returned null (no group visible)")
         return result
     }
 
@@ -558,48 +523,30 @@ class WifiShareAp(private val context: Context) {
     companion object {
         private const val CALLBACK_TIMEOUT_MS = 30_000L
         private const val GROUP_INFO_TIMEOUT_MS = 10_000L
+        private const val REMOVE_GROUP_TIMEOUT_MS = 10_000L
         private const val INTERFACE_TIMEOUT_MS = 20_000L
-
-        /** WifiManager.LocalOnlyHotspotCallback error codes, in plain words. */
-        fun lohsFailure(reason: Int): String = when (reason) {
-            1 -> "ERROR_NO_CHANNEL - no WiFi channel available (try 2.4GHz only, or move off the current channel)"
-            2 -> "ERROR_GENERIC - the WiFi stack refused"
-            3 -> "ERROR_INCOMPATIBLE_MODE - WiFi is off, or this radio cannot run an AP and a WiFi connection at the same time"
-            4 -> "ERROR_TETHERING_DISALLOWED - a device policy/carrier setting forbids sharing"
-            else -> "unknown reason $reason"
-        }
+        private const val CLEAN_STATE_SETTLE_MS = 1_000L
+        private const val P2P_ENABLE_WAIT_MS = 8_000L
 
         /** WifiP2pManager.ActionListener error codes, in plain words. */
         fun p2pFailure(reason: Int): String = when (reason) {
             0 -> "ERROR - the framework refused (often: Location permission or Location services are off)"
             1 -> "P2P_UNSUPPORTED - this device has no WiFi Direct"
-            2 -> "BUSY - WiFi Direct is disabled or not accepting groups (WiFi off, Location off, or a stale channel). Not necessarily another group."
+            2 -> "BUSY - the P2P state machine is not accepting a new group (WiFi off, Location off, a stale channel, or a leftover group - which is why we removeGroup first)"
             3 -> "NO_SERVICE_REQUESTS - service discovery was not registered"
             4 -> "NETWORK_ALREADY_CONNECTED - already in a WiFi Direct group"
             else -> "unknown reason $reason"
-        }
-
-        private fun hintForLohsFailure(reason: Int, log: (String) -> Unit) {
-            when (reason) {
-                3 -> log("ap[lohs]: hint - switch WiFi ON and Location ON, then try again; " +
-                    "if the radio cannot do STA+AP, only the Android hotspot toggle will work")
-                4 -> log("ap[lohs]: hint - sharing is blocked by a device/carrier policy")
-                1 -> log("ap[lohs]: hint - the current WiFi channel cannot host an AP; " +
-                    "reconnect the phone to a 2.4GHz network (channel 1-11)")
-                else -> log("ap[lohs]: hint - check Location permission and Location services")
-            }
         }
 
         private fun hintForP2pFailure(reason: Int, log: (String) -> Unit) {
             when (reason) {
                 0 -> log("ap[p2p]: hint - grant Location permission and switch Location ON; " +
                     "Android hides WiFi APIs from apps without it")
-                1 -> log("ap[p2p]: hint - this phone has no WiFi Direct; use the local-only hotspot or the Android toggle")
-                2 -> log("ap[p2p]: hint - " + ApPlan.p2pBusyHint(
-                    wifiEnabled = true,
-                    locationPermission = true,
-                    locationServicesOn = true
-                ))
+                1 -> log("ap[p2p]: hint - this phone has no WiFi Direct")
+                2 -> log("ap[p2p]: hint - " +
+                    "a leftover group or a disabled P2P state machine answers BUSY. The group is " +
+                    "removed and the state confirmed clean before the retry; if it still answers " +
+                    "BUSY, WiFi or Location is off.")
                 4 -> log("ap[p2p]: hint - a WiFi Direct group already exists; it is removed and retried")
                 else -> Unit
             }

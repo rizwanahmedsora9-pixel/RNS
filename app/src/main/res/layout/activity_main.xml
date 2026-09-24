@@ -98,14 +98,6 @@
                         <TextView android:id="@+id/dash_ap_kind" style="@style/StatValue" android:text="..." />
                     </LinearLayout>
                     <LinearLayout style="@style/StatRow">
-                        <TextView style="@style/StatLabel" android:text="Join (SSID / password)" />
-                        <TextView
-                            android:id="@+id/dash_ap_ssid"
-                            style="@style/StatValue"
-                            android:textIsSelectable="true"
-                            android:text="..." />
-                    </LinearLayout>
-                    <LinearLayout style="@style/StatRow">
                         <TextView style="@style/StatLabel" android:text="Internet side (WAN)" />
                         <TextView android:id="@+id/dash_wan" style="@style/StatValue" android:text="..." />
                     </LinearLayout>
@@ -131,31 +123,110 @@
                     </LinearLayout>
                 </LinearLayout>
 
+                <!-- The single control surface: Start -> Running -> Stopped -> Start.
+                     Disabled (and therefore un-raceable) during transitions. -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:layout_marginTop="12dp">
+                    android:layout_marginTop="12dp"
+                    android:gravity="center_vertical">
 
                     <Button
-                        android:id="@+id/btn_start"
+                        android:id="@+id/btn_toggle"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:layout_marginEnd="6dp"
                         android:text="@string/btn_start"
                         android:textColor="@color/textPrimary"
                         android:backgroundTint="@color/green" />
 
-                    <Button
-                        android:id="@+id/btn_stop"
-                        android:layout_width="0dp"
+                    <TextView
+                        android:id="@+id/dash_status_badge"
+                        android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="6dp"
-                        android:text="@string/btn_stop"
-                        android:textColor="@color/textPrimary"
-                        android:backgroundTint="@color/red" />
+                        android:layout_marginStart="10dp"
+                        android:paddingStart="10dp"
+                        android:paddingEnd="10dp"
+                        android:paddingTop="6dp"
+                        android:paddingBottom="6dp"
+                        android:background="@color/chip"
+                        android:text="@string/badge_off"
+                        android:textColor="@color/textDim"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:maxLines="2"
+                        android:ellipsize="end" />
+                </LinearLayout>
+
+                <!-- One-tap join: the passphrase is fixed and non-secret; the
+                     voucher is the real gate. -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="@color/card"
+                    android:padding="14dp"
+                    android:layout_marginTop="12dp"
+                    android:id="@+id/card_join">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/join_title"
+                        android:textColor="@color/textDim"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginTop="8dp"
+                        android:gravity="center_vertical">
+
+                        <ImageView
+                            android:id="@+id/dash_join_qr"
+                            android:layout_width="96dp"
+                            android:layout_height="96dp"
+                            android:background="#FFFFFF"
+                            android:padding="4dp"
+                            android:contentDescription="@string/join_qr_desc"
+                            android:visibility="gone" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="12dp"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/dash_join_ssid"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:textColor="@color/textPrimary"
+                                android:textSize="15sp"
+                                android:textStyle="bold"
+                                android:text="-" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:textColor="@color/textDim"
+                                android:textSize="12sp"
+                                android:text="@string/join_pass_label" />
+
+                            <TextView
+                                android:id="@+id/dash_join_pass"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:textColor="@color/code"
+                                android:textSize="13sp"
+                                android:textIsSelectable="true"
+                                android:text="-" />
+                        </LinearLayout>
+                    </LinearLayout>
                 </LinearLayout>
 
                 <Button
@@ -411,11 +482,11 @@
                 android:orientation="vertical"
                 android:padding="16dp">
 
-                <TextView style="@style/SectionHeader" android:text="Hotspot name &amp; password" />
+                <TextView style="@style/SectionHeader" android:text="Hotspot name" />
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Used when the app can start the hotspot by itself (Android 12+). On older Androids the phone's own hotspot settings apply."
+                    android:text="@string/ssid_help"
                     android:textColor="@color/textDim"
                     android:textSize="12sp"
                     android:paddingBottom="4dp" />
@@ -430,91 +501,6 @@
                     android:backgroundTint="@color/accentDark"
                     android:textSize="14sp"
                     android:inputType="text" />
-
-                <EditText
-                    android:id="@+id/set_pass"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:hint="Password (8+ characters)"
-                    android:textColor="@color/textPrimary"
-                    android:textColorHint="@color/textDim"
-                    android:backgroundTint="@color/accentDark"
-                    android:textSize="14sp"
-                    android:inputType="textPassword" />
-
-                <TextView
-                    style="@style/SectionHeader"
-                    android:text="How the WiFi network is created"
-                    android:layout_marginTop="20dp" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/ap_mode_help"
-                    android:textColor="@color/textDim"
-                    android:textSize="12sp"
-                    android:paddingBottom="6dp" />
-
-                <RadioGroup
-                    android:id="@+id/set_ap_mode"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-
-                    <RadioButton
-                        android:id="@+id/mode_auto"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:buttonTint="@color/accent"
-                        android:textColor="@color/textPrimary"
-                        android:textSize="13sp"
-                        android:text="Automatic (try everything)" />
-
-                    <RadioButton
-                        android:id="@+id/mode_netshare"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:buttonTint="@color/accent"
-                        android:textColor="@color/textPrimary"
-                        android:textSize="13sp"
-                        android:text="NetShare - WiFi Direct AP (no hotspot toggle)" />
-
-                    <RadioButton
-                        android:id="@+id/mode_localonly"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:buttonTint="@color/accent"
-                        android:textColor="@color/textPrimary"
-                        android:textSize="13sp"
-                        android:text="Local-only hotspot API (no hotspot toggle)" />
-
-                    <RadioButton
-                        android:id="@+id/mode_system"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:buttonTint="@color/accent"
-                        android:textColor="@color/textPrimary"
-                        android:textSize="13sp"
-                        android:text="Android hotspot only (ap0)" />
-
-                    <RadioButton
-                        android:id="@+id/mode_rootap"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:buttonTint="@color/accent"
-                        android:textColor="@color/textPrimary"
-                        android:textSize="13sp"
-                        android:text="Root hostapd (experimental)" />
-
-                    <RadioButton
-                        android:id="@+id/mode_manual"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:buttonTint="@color/accent"
-                        android:textColor="@color/textPrimary"
-                        android:textSize="13sp"
-                        android:text="Do nothing - wait for the hotspot toggle" />
-                </RadioGroup>
 
                 <TextView
                     style="@style/SectionHeader"
@@ -613,15 +599,6 @@
                     android:text="@string/btn_permissions"
                     android:textColor="@color/textPrimary"
                     android:backgroundTint="@color/chip" />
-
-                <Button
-                    android:id="@+id/btn_stop_all"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:text="@string/btn_stop_all"
-                    android:textColor="@color/textPrimary"
-                    android:backgroundTint="@color/red" />
             </LinearLayout>
         </ScrollView>
     </FrameLayout>

@@ -3,30 +3,21 @@ package com.hotspot.billing.core
 import com.hotspot.billing.debug.AppLog
 import com.hotspot.billing.net.ApHandle
 import com.hotspot.billing.net.ApLauncher
-import com.hotspot.billing.net.ApMode
 import com.hotspot.billing.net.LanPlan
 import com.hotspot.billing.util.RootShell
-import kotlinx.coroutines.delay
 
 /**
- * Phase 1 — Fix Hotspot Engine
- * NetworkController / NetworkEngine
+ * The gateway START/STOP state machine.
  *
- * Responsibilities:
- * START:
- *  Detect internet source
- *  Create LAN
- *  Start DHCP
- *  Start DNS
- *  Enable NAT
- *  Test internet
- *  Return SUCCESS
+ * START (6 steps, each reported to the UI as "STARTING… N/6"):
+ *  1. Detect the internet source (WAN)
+ *  2. Create the LAN (WiFi Direct group owner - the only AP method)
+ *  3. Wait for the LAN address (adopt, don't force)
+ *  4. Start DHCP (the client MUST get IP + gateway + DNS)
+ *  5. Start DNS (same dnsmasq, verified)
+ *  6. Enable NAT (+ internet test)
  *
- * STOP:
- *  Clean shutdown: DHCP, DNS, NAT, Hotspot
- *
- * This is the foundation — without stable DHCP/NAT/DNS, vouchers and printing
- * will only sit on top of a broken hotspot.
+ * STOP: clean shutdown - DHCP/DNS, NAT, then the AP handle.
  */
 class NetworkController(
     private val apLauncher: ApLauncher
@@ -54,20 +45,24 @@ class NetworkController(
         INTERNET_TEST
     }
 
+    /** The six steps the UI badge counts ("STARTING… N/6"). */
+    val totalSteps: Int = STEP_COUNT
+
     /**
-     * START button flow as per master plan.
+     * START flow. [onStep] receives 1..6 as each step begins, so the dashboard
+     * badge can show progress; the final step (6) covers NAT + the internet
+     * test.
      */
     suspend fun start(
-        mode: ApMode,
         ssid: String,
-        password: String,
-        pinnedLanIf: String?,
-        log: (String) -> Unit
+        log: (String) -> Unit,
+        onStep: (Int) -> Unit = {}
     ): StartResult {
-        log("network: START requested mode=${mode.label} ssid=$ssid")
+        log("network: START requested ssid=$ssid")
 
         // 1. Detect internet source
-        log("network: step 1/6 detecting WAN")
+        onStep(1)
+        log("network: step 1/$STEP_COUNT detecting WAN")
         val wan = WanDetector.detectWan()
         if (wan == null) {
             val msg = "No internet source found — check mobile data or WiFi"
@@ -79,44 +74,38 @@ class NetworkController(
         }
         log("network: WAN = ${wan.interfaceName} (${wan.type}) hasInternet=${wan.hasInternet}")
 
-        // 2. Create LAN (AP)
-        log("network: step 2/6 creating LAN AP")
+        // 2. Create LAN (WiFi Direct group owner - the only method)
+        onStep(2)
+        log("network: step 2/$STEP_COUNT creating LAN AP (WiFi Direct group owner)")
         var apHandle: ApHandle? = null
         var lanIf: String? = null
-
         try {
-            // Try launcher
-            apHandle = apLauncher.launch(mode, ssid, password, pinnedLanIf, log)
+            apHandle = apLauncher.launch(ssid, log)
             lanIf = apHandle?.interfaceName
         } catch (e: Throwable) {
             log("network: AP launcher threw ${e.javaClass.simpleName}: ${e.message}")
             AppLog.e(AppLog.TAG_AP, "network: launcher failed", e)
         }
 
-        // If launcher didn't give us interface, wait for any AP interface
         if (lanIf == null) {
-            log("network: no interface from launcher, waiting for AP...")
-            lanIf = waitForLanInterface(30_000, log)
-        }
-
-        if (lanIf == null) {
-            val msg = "No hotspot interface appeared. WiFi and Location were switched on and " +
-                "every method in ${mode.label} was tried (see the debugger for the reason each one failed). " +
-                "The gateway retries; switching the Android hotspot on still works."
+            val msg = "Could not create the WiFi Direct group (see the debugger for the exact " +
+                "reason - Location, P2P state or createGroup). Tap Start to retry."
             log("network: FAILED LAN creation: $msg")
             return StartResult.Failed(msg, Step.LAN_CREATION)
         }
         log("network: LAN = $lanIf")
 
         // 3. Wait for address (adopt Android's address, don't force)
-        log("network: step 3/6 waiting for address on $lanIf")
+        onStep(3)
+        log("network: step 3/$STEP_COUNT waiting for address on $lanIf")
         val address = apLauncher.waitForAddress(lanIf, 15_000, log)
         if (address == null) {
             AppLog.w(AppLog.TAG_NET, "network: no address on $lanIf after 15s, continuing (may still work)")
         }
 
         // 4. Start DHCP (must guarantee client gets IP, gateway, DNS)
-        log("network: step 4/6 starting DHCP on $lanIf")
+        onStep(4)
+        log("network: step 4/$STEP_COUNT starting DHCP on $lanIf")
         val leaveDhcp = apHandle?.leaveAndroidDhcp == true ||
             apLauncher.shouldLeaveAndroidDhcp(lanIf)
         if (leaveDhcp) {
@@ -124,7 +113,7 @@ class NetworkController(
         }
         val dhcpOk = DhcpManager.start(lanIf, leaveDhcp)
         if (!dhcpOk) {
-            val msg = "DHCP failed to start on $lanIf — clients will stuck at Obtaining IP"
+            val msg = "DHCP failed to start on $lanIf — clients would be stuck at Obtaining IP"
             log("network: FAILED DHCP: $msg")
             // Try granular repair once
             if (!DhcpManager.restart(lanIf)) {
@@ -139,7 +128,8 @@ class NetworkController(
         log("network: DHCP config gateway=${dhcpConfig.gateway} range=${dhcpConfig.startIp}-${dhcpConfig.endIp}")
 
         // 5. Start DNS (same dnsmasq, but verify)
-        log("network: step 5/6 starting DNS")
+        onStep(5)
+        log("network: step 5/$STEP_COUNT starting DNS")
         val dnsInfo = DnsManager.getInfo()
         if (!dnsInfo.isRunning) {
             val msg = "DNS not running after DHCP start"
@@ -150,16 +140,15 @@ class NetworkController(
         }
         log("network: DNS running gateway=${dnsInfo.gateway} upstream=${dnsInfo.upstream1},${dnsInfo.upstream2} foreign=${dnsInfo.foreignRunning}")
 
-        // 6. Enable NAT
-        log("network: step 6/6 enabling NAT WAN=${wan.interfaceName} LAN=$lanIf")
+        // 6. Enable NAT + test internet
+        onStep(6)
+        log("network: step 6/$STEP_COUNT enabling NAT WAN=${wan.interfaceName} LAN=$lanIf")
         val plan = RootShell.readLanPlan()
         val subnet = plan?.subnet ?: "10.66.0.0/24"
         val natOk = NatManager.enableNat(wan.interfaceName, lanIf, subnet)
         if (!natOk) {
             AppLog.w(AppLog.TAG_NET, "network: NAT enable returned false, but continuing")
         }
-
-        // 7. Test internet (verify clients will get internet)
         log("network: testing internet connectivity")
         val internetOk = NatManager.checkInternet()
         if (!internetOk) {
@@ -179,7 +168,7 @@ class NetworkController(
     }
 
     /**
-     * STOP button flow — clean shutdown.
+     * STOP flow — clean shutdown.
      */
     suspend fun stop(
         apHandle: ApHandle?,
@@ -195,32 +184,19 @@ class NetworkController(
         log("network: disabling NAT")
         NatManager.disableNat()
 
-        // 3. Close AP handle (releases LOHS reservation / P2P group)
+        // 3. Close AP handle (removes the P2P group)
         apHandle?.let {
             log("network: releasing AP ${it.kind.label} ${it.interfaceName}")
             it.close(log)
         }
 
-        // 4. Stop root hostapd if running
-        try {
-            RootShell.run("sh /data/local/tmp/netshare_ap.sh stop", quiet = false)
-        } catch (e: Throwable) {
-            // ignore
-        }
+        // 4. Stop a root hostapd left by an older version of the app, if any.
+        ApLauncher.stopLegacyNetshareAp(log)
 
         log("network: STOP completed")
     }
 
-    private suspend fun waitForLanInterface(timeoutMs: Long, log: (String) -> Unit): String? {
-        val start = System.currentTimeMillis()
-        while (System.currentTimeMillis() - start < timeoutMs) {
-            val lan = WanDetector.detectLanInterfaces().firstOrNull()
-            if (lan != null) {
-                log("network: found LAN ${lan.interfaceName} after ${System.currentTimeMillis() - start}ms")
-                return lan.interfaceName
-            }
-            delay(1000)
-        }
-        return null
+    companion object {
+        private const val STEP_COUNT = 6
     }
 }

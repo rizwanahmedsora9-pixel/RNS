@@ -205,6 +205,9 @@ start() {
         die "passphrase must be at least 8 characters (got ${#PASS})"
     fi
 
+    # Unconditionally: a crashed session's rnsap0 must not survive a start.
+    cleanup_stale_interfaces
+
     if hostapd_running; then
         log "hostapd from a previous run is still alive (pid $(cat "$PIDFILE"))"
         . "$RUNTIME_FILE" 2>/dev/null
@@ -303,6 +306,49 @@ start() {
     fi
     log "AP up: $SSID on $NEW_IF (pid $(cat "$PIDFILE"))"
     write_runtime "$NEW_IF" "$SSID" "$PASS" "$CHANNEL" "root-hostapd"
+}
+
+# A crashed session (or the app being force-killed) leaves rnsap0 behind: `stop`
+# only removes an interface when the CURRENT run's ownership file says it
+# created it, so after a crash nothing ever deletes it. Only this app creates an
+# interface with this name, so start() may remove it unconditionally - first
+# killing whatever hostapd still thinks it owns.
+cleanup_stale_interfaces() {
+    iface_exists "$IFACE_NAME" || return 0
+    # A HEALTHY previous run (pidfile + live process) is the "already running"
+    # fast path, not a stale interface - leave it for start() to notice.
+    if hostapd_running; then
+        return 0
+    fi
+    log "stale $IFACE_NAME from a crashed session found - removing it unconditionally"
+    # The previous run's hostapd (pidfile survived, process died with the
+    # session, or the driver still holds the interface): kill it if alive.
+    if [ -f "$PIDFILE" ]; then
+        P=$(cat "$PIDFILE" 2>/dev/null)
+        if [ -n "$P" ] && kill -0 "$P" 2>/dev/null; then
+            kill "$P" 2>/dev/null && log "killed the previous run's hostapd (pid $P)"
+        fi
+        rm -f "$PIDFILE"
+    fi
+    for proc in /proc/[0-9]*; do
+        pid=${proc#/proc/}
+        cmdline=$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null) || continue
+        case "$cmdline" in
+            *hostapd*"$IFACE_NAME"*)
+                kill "$pid" 2>/dev/null && log "killed hostapd bound to $IFACE_NAME (pid $pid)"
+                ;;
+        esac
+    done
+    sleep 1
+    ip link set "$IFACE_NAME" down 2>/dev/null
+    IW=$(find_iw)
+    if [ -n "$IW" ] && $IW dev "$IFACE_NAME" del 2>/dev/null; then
+        log "removed stale $IFACE_NAME (iw dev del)"
+    elif ip link del "$IFACE_NAME" 2>/dev/null; then
+        log "removed stale $IFACE_NAME (ip link del)"
+    else
+        log "could not remove stale $IFACE_NAME - the driver refused"
+    fi
 }
 
 stop() {

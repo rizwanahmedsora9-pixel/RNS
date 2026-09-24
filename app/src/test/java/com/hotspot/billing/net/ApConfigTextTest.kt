@@ -59,8 +59,8 @@ class ApConfigTextTest {
     fun `passphrases are pushed into the 8-63 ASCII range WPA2 requires`() {
         assertEquals("hotspot123", ApConfigText.sanitizePassphrase("hotspot123"))
         assertEquals("short120", ApConfigText.sanitizePassphrase("short12"))  // 7 chars -> padded to 8
-        assertEquals("hotspot123", ApConfigText.sanitizePassphrase(""))
-        assertEquals("hotspot123", ApConfigText.sanitizePassphrase(null))
+        assertEquals(JoinConfig.FIXED_PASSPHRASE, ApConfigText.sanitizePassphrase(""))
+        assertEquals(JoinConfig.FIXED_PASSPHRASE, ApConfigText.sanitizePassphrase(null))
         assertEquals(63, ApConfigText.sanitizePassphrase("x".repeat(90)).length)
     }
 
