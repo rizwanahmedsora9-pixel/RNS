@@ -281,6 +281,7 @@ class MainActivity : AppCompatActivity() {
             HotspotService.Phase.STARTING -> "starting..."
             HotspotService.Phase.WAITING_AP -> "OFF - switch it on (see below)"
             HotspotService.Phase.RUNNING -> "running"
+            HotspotService.Phase.STOPPING -> "STOPPING..."
             HotspotService.Phase.STOPPED -> "stopped"
             HotspotService.Phase.ERROR -> "error"
         }
@@ -610,6 +611,17 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_stop_all).setOnClickListener {
             withService { it.stopSequence() }
         }
+        findViewById<Button>(R.id.btn_exit).setOnClickListener {
+            confirm(
+                "EXIT and clean stop?",
+                "Everything is removed: hotspot, DHCP/DNS, NAT, firewall rules, the " +
+                    "bandwidth shaper and any leftover from an earlier session. The " +
+                    "app closes; press Start/open the app to run the gateway again."
+            ) {
+                toast("Stopping everything...")
+                withService { it.exitAndClean() }
+            }
+        }
     }
 
     private fun selectedApMode(): ApMode =
@@ -708,18 +720,18 @@ class MainActivity : AppCompatActivity() {
             val newProfiles = withContext(Dispatchers.IO) { db.deviceProfileDao().getAll() }
             val sessions = withContext(Dispatchers.IO) { db.sessionDao().getRecent(50) }
             if (heavy) {
-                leases = withContext(Dispatchers.IO) {
-                    if (svc?.state?.phase == HotspotService.Phase.RUNNING) {
-                        RootShell.connectedClients(svc?.state?.lanIf)
-                    } else {
-                        emptyList()
-                    }
+                // No shell commands from the UI thread pool any more: the service
+                // already collected both (its watchdog tick owns the root shell).
+                // Four root commands every ~3 s here is what kept the shell busy -
+                // and a busy shell is why START took a minute and STOP took
+                // minutes on the 2026-09-24 log.
+                val service = svc
+                leases = if (service?.state?.phase == HotspotService.Phase.RUNNING) {
+                    service.clientsSnapshot()
+                } else {
+                    emptyList()
                 }
-                envText = withContext(Dispatchers.IO) {
-                    val env = RootShell.readEnvFile()
-                    val runtime = RootShell.readRuntimeFile().ifBlank { "(runtime not written yet)" }
-                    "$env\n---\n$runtime"
-                }
+                envText = service?.envSnapshot() ?: "(service not connected)"
             }
             allVouchers = vouchers
             profiles = newProfiles

@@ -92,8 +92,15 @@ if op == "-F":
     save(db); sys.exit(0)
 
 if op == "-S":
-    for rule in chains.get(rest[0], []):
-        print(f"-A {rest[0]} " + " ".join(rule))
+    if rest:
+        for rule in chains.get(rest[0], []):
+            print(f"-A {rest[0]} " + " ".join(rule))
+    else:
+        # `iptables -S` with no chain prints the whole table (what the app's
+        # single-round-trip `probe` parses).
+        for name, rules in chains.items():
+            for rule in rules:
+                print(f"-A {name} " + " ".join(rule))
     sys.exit(0)
 
 chain, rule = rest[0], rest[1:]
@@ -579,6 +586,151 @@ if [ ! -f "$STATE/netshare_hostapd.pid" ] && [ ! -f "$STATE/netshare.runtime" ];
 else
     fail "stop left state behind"
 fi
+
+section "probe: one round-trip for the whole health picture"
+$SETUP start >/dev/null 2>&1
+$SETUP probe ap0 > "$WORK/out.probe" 2>&1 || fail "probe exited non-zero"
+for key in probe_version lan wan subnet gateway lan_up lan_addr ip_forward dhcp_ours dhcp_orphan \
+           dhcp_foreign dhcp_pid nat_jump fwd_jump in_jump masq redirect rule_iif rule_subnet leases authed; do
+    if grep -q "^$key=" "$WORK/out.probe"; then pass "probe reports $key"; else fail "probe is missing $key"; fi
+done
+if grep -q '^masq=yes$' "$WORK/out.probe"; then
+    pass "probe confirms the masquerade is installed for the uplink that is actually used"
+else
+    fail "probe says the masquerade is missing: $(grep '^masq=' "$WORK/out.probe")"
+fi
+if grep -q '^dhcp_ours=yes$' "$WORK/out.probe" && grep -q '^dhcp_orphan=no$' "$WORK/out.probe"; then
+    pass "probe distinguishes our tracked dnsmasq from an orphan"
+else
+    fail "probe DHCP ownership is wrong: $(grep '^dhcp_' "$WORK/out.probe")"
+fi
+# The app calls probe every watchdog tick: it must not change any state.
+: > "$LOG"
+$SETUP probe ap0 >/dev/null 2>&1
+if grep -qE "^(iptables|ip6tables) .*(-[AID]|-I|-F|-X)|^tc |^ip (addr|link|rule) (add|del|flush)|^dnsmasq |^sysctl -w" "$LOG"; then
+    fail "probe changes state: $(grep -E '^(iptables|ip6tables|tc|ip|dnsmasq|sysctl)' "$LOG" | head -3)"
+else
+    pass "probe only reads (no iptables/ip/tc/dnsmasq state change)"
+fi
+$SETUP stop >/dev/null 2>&1
+
+section "a dnsmasq left over from an earlier session is cleared, not adopted"
+# Reproduce the 2026-09-24 device failure: an untracked dnsmasq of ours survives
+# the previous session, so the next start() dies with
+# "failed to bind DHCP server socket: Address already in use".
+mkdir -p "$WORK/orphan"
+# A process whose argv looks exactly like a dnsmasq of ours, so /proc/cmdline
+# matching is what the script under test has to rely on.
+cat > "$WORK/orphan/dnsmasq" <<'ORPH'
+#!/usr/bin/env python3
+import time
+time.sleep(600)
+ORPH
+chmod +x "$WORK/orphan/dnsmasq"
+"$WORK/orphan/dnsmasq" --pid-file="$STATE/dnsmasq_hotspot.pid" \
+    --dhcp-leasefile="$STATE/dnsmasq.leases" --dhcp-range=10.66.0.10,10.66.0.250 600 &
+ORPHAN_PID=$!
+# No pidfile on purpose: the app was force-closed after the pidfile was removed.
+rm -f "$STATE/dnsmasq_hotspot.pid"
+sleep 0.4
+kill -0 "$ORPHAN_PID" 2>/dev/null || fail "the orphan fixture did not start (cannot test adoption)"
+: > "$LOG"
+$SETUP start > "$WORK/out.orphan" 2>&1 || { fail "start exited non-zero with an orphan present"; cat "$WORK/out.orphan"; }
+if kill -0 "$ORPHAN_PID" 2>/dev/null; then
+    fail "the orphan dnsmasq (pid $ORPHAN_PID) survived start"
+else
+    pass "start killed the dnsmasq left over from the earlier session"
+fi
+kill -0 "$(cat "$STATE/dnsmasq_hotspot.pid" 2>/dev/null)" 2>/dev/null \
+    && pass "a fresh dnsmasq of ours owns the port afterwards" \
+    || fail "no fresh dnsmasq running after start"
+if grep -q "left over from an earlier session" "$WORK/out.orphan"; then
+    pass "the log says why it was killed"
+else
+    fail "no explanation in the start output: $(cat "$WORK/out.orphan")"
+fi
+$SETUP stop >/dev/null 2>&1
+
+section "nat <lan_if> <wan_if> <subnet>: repair forwarding without dropping DHCP"
+$SETUP start >/dev/null 2>&1
+: > "$LOG"
+# Simulate Android rewriting the tables under us.
+python3 - "$STUB_RULES" <<'PY'
+import json, sys
+p = sys.argv[1]
+db = json.load(open(p))
+db.get("nat", {}).pop("HS_NAT", None)
+db.get("filter", {}).pop("HS_FWD", None)
+db.get("filter", {}).pop("HS_IN", None)
+# Android's tether service also rewrites the built-in chains: the jumps go too.
+for table, chain in (("nat", "PREROUTING"), ("filter", "FORWARD"), ("filter", "INPUT")):
+    db.get(table, {})[chain] = [r for r in db.get(table, {}).get(chain, [])
+                                if "-j HS_" not in " ".join(r)]
+# ... and the masquerade, exactly like netd does when tethering restarts.
+db.get("nat", {})["POSTROUTING"] = [r for r in db.get("nat", {}).get("POSTROUTING", [])
+                                    if "MASQUERADE" not in " ".join(r)]
+json.dump(db, open(p, "w"))
+PY
+$SETUP nat ap0 ccmni0 10.66.0.0/24 > "$WORK/out.nat" 2>&1 || { fail "nat exited non-zero"; cat "$WORK/out.nat"; }
+check "nat re-installs the PREROUTING jump" 1 "iptables -t nat -I PREROUTING 1 -j HS_NAT"
+check "nat re-installs the FORWARD jump" 1 "iptables -t filter -I FORWARD 1 -j HS_FWD"
+check "nat re-installs the masquerade for the given uplink" 1 "iptables -t nat -I POSTROUTING 1 -o ccmni0 -s 10.66.0.0/24 -j MASQUERADE"
+check "nat installs the portal redirect again" 1 "iptables -t nat -A HS_NAT -i ap0 -p tcp --dport 80 -j REDIRECT --to-ports 8080"
+if grep -q "^dnsmasq " "$LOG"; then
+    fail "nat restarted dnsmasq (clients would be dropped)"
+else
+    pass "nat does not touch DHCP (no client is disconnected)"
+fi
+$SETUP probe ap0 > "$WORK/out.probe.nat" 2>&1
+if grep -q '^masq=yes$' "$WORK/out.probe.nat"; then
+    pass "probe agrees that the masquerade is back"
+else
+    fail "probe still reports no masquerade after nat: $(grep '^masq=' "$WORK/out.probe.nat") (lan=$(grep '^lan=' "$WORK/out.probe.nat") subnet=$(grep '^subnet=' "$WORK/out.probe.nat") wan=$(grep '^wan=' "$WORK/out.probe.nat"))"
+fi
+# A second run must not pile the redirects up.
+$SETUP nat ap0 ccmni0 10.66.0.0/24 >/dev/null 2>&1
+check "a second nat run does not duplicate the portal redirect" 1 "iptables -t nat -A HS_NAT -i ap0 -p tcp --dport 80 -j REDIRECT --to-ports 8080"
+
+section "cleanup (EXIT): nothing of ours survives, even an orphan and a stale interface"
+"$WORK/orphan/dnsmasq" --pid-file="$STATE/dnsmasq_hotspot.pid" \
+    --dhcp-leasefile="$STATE/dnsmasq.leases" 600 &
+ORPHAN2=$!
+sleep 0.4
+kill -0 "$ORPHAN2" 2>/dev/null || fail "the second orphan fixture did not start"
+# Pretend a previous session ran on a different interface name.
+echo "p2p-old0" > "$STATE/hotspot.last_lan_if"
+python3 - "$STUB_RULES" "$STUB_IPRULES" <<'PY'
+import json, sys
+db = json.load(open(sys.argv[1]))
+db["filter"].setdefault("HS_FWD", []).append(["-i", "p2p-old0", "-j", "DROP"])
+json.dump(db, open(sys.argv[1], "w"))
+open(sys.argv[2], "a").write("from all iif p2p-old0 lookup main\n")
+PY
+: > "$LOG"
+$SETUP cleanup ap0 > "$WORK/out.cleanup" 2>&1 || { fail "cleanup exited non-zero"; cat "$WORK/out.cleanup"; }
+if [ -f "$STATE/dnsmasq_hotspot.pid" ] && kill -0 "$(cat "$STATE/dnsmasq_hotspot.pid" 2>/dev/null)" 2>/dev/null; then
+    fail "cleanup left a dnsmasq running (pidfile still points at a live pid)"
+fi
+kill -0 "$ORPHAN2" 2>/dev/null && fail "cleanup left the orphan dnsmasq (pid $ORPHAN2) alive" \
+                                 || pass "cleanup killed the dnsmasq the pidfile did not know about"
+[ -f "$STATE/hotspot.runtime" ] && fail "cleanup left hotspot.runtime behind" || pass "cleanup removed the stale runtime file"
+[ -f "$STATE/dnsmasq_hotspot.pid" ] && fail "cleanup left the pidfile behind" || pass "cleanup removed the pidfile"
+[ -s "$STATE/hotspot_tc.state" ] && fail "cleanup left shaper classes behind" || pass "cleanup stopped the shaper (no classes left)"
+left=$(python3 - "$STUB_RULES" <<'PY'
+import json, sys
+db = json.load(open(sys.argv[1]))
+print(sum(1 for t in db.values() for c in t.values() for r in c
+          if any(("HS_" in x) or ("ap0" in x) or ("p2p-old0" in x) or ("MASQUERADE" in x) for x in r)))
+PY
+)
+[ "$left" = "0" ] && pass "no gateway rules left (current or stale interface)" || fail "$left rules survived cleanup"
+if grep -q "iif p2p-old0 lookup main" "$STUB_IPRULES"; then
+    fail "cleanup left the policy-routing rule of the previous interface"
+else
+    pass "cleanup removed the routing rule of the previous interface"
+fi
+check "cleanup removes the port-67 OUTPUT guard (next session's DHCP must not be blocked)" 0 "iptables -t filter -I OUTPUT 1 -o ap0 -p udp --sport 67"
+$SETUP cleanup ap0 >/dev/null 2>&1 && pass "cleanup is idempotent (running twice is safe)" || fail "second cleanup exited non-zero"
 
 section "foreign-dhcp / procs report cleanly"
 : > "$LOG"

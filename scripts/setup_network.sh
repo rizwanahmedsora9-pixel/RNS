@@ -14,10 +14,21 @@
 #   sh /data/local/tmp/setup_network.sh reserve     <mac> <static_ip>
 #   sh /data/local/tmp/setup_network.sh unreserve   <mac>
 #   sh /data/local/tmp/setup_network.sh route       <lan_if> <subnet>   # policy routing only
+#   sh /data/local/tmp/setup_network.sh nat         <lan_if> <wan> <subnet>  # forwarding only, no DHCP restart
+#   sh /data/local/tmp/setup_network.sh probe       [lan_if]            # key=value health snapshot (1 round-trip)
+#   sh /data/local/tmp/setup_network.sh cleanup     [lan_if]            # EXIT: remove everything, including orphans
 #   sh /data/local/tmp/setup_network.sh foreign-dhcp                    # yes/no
 #   sh /data/local/tmp/setup_network.sh free-dns                        # drop every dnsmasq (port 53)
 #   sh /data/local/tmp/setup_network.sh procs                           # dhcp/ap processes
 #   sh /data/local/tmp/setup_network.sh diag                            # everything, for the debugger
+#
+# OWNERSHIP
+#   Every dnsmasq this script starts carries --pid-file/--dhcp-leasefile/
+#   --dhcp-hostsfile under $STATE_DIR. That is the ownership marker: start() and
+#   cleanup() kill any dnsmasq that matches it, so an instance from a previous
+#   session can never keep UDP/67 and make the next one die with "Address
+#   already in use" (seen on 2026-09-24, device log). Android's own tether
+#   dnsmasq has none of those paths and is never touched.
 #
 #   KEEP_ANDROID_DHCP=1 sh ... start
 #       Do not kill Android's tether dnsmasq. On the Hot 8 the framework tears
@@ -102,15 +113,37 @@ HOSTS_DIR="$STATE_DIR/dhcp_hosts.d"
 HOSTS_FILE="$STATE_DIR/dhcp_hosts"
 AUTHORIZED_FILE="$STATE_DIR/authorized_macs.txt"
 RUNTIME_FILE="$STATE_DIR/hotspot.runtime"
+# The interface the last start()/cleanup() acted on. cleanup() needs it because
+# the rules can outlive the interface name they were written for.
+LAST_IF_FILE="$STATE_DIR/hotspot.last_lan_if"
 
 log() { echo "[setup_network] $*"; }
 die() { echo "[setup_network] ERROR: $*" >&2; exit 1; }
 
 # --- helpers -----------------------------------------------------------------
 
+# The interface the app pinned in hotspot.env, if it did. The app resolves the
+# uplink ONCE (WanDetector) and writes it here; the script must then use exactly
+# that interface for NAT. Resolving it again here is how NAT ended up installed
+# for ccmni1 while the uplink was actually ccmni0 (2026-09-24 debug log,
+# 12:37:25 script `WAN=ccmni1` vs 12:37:52 app `WAN=ccmni0`): the client got an
+# IP, redeemed a voucher and still had no internet, because MASQUERADE was on an
+# interface no packet ever left through.
+WAN_PINNED=0
+if [ "$WAN_IF" != "auto" ]; then WAN_PINNED=1; fi
+
 resolve_wan() {
-    if [ "$WAN_IF" != "auto" ]; then
+    if [ "$WAN_PINNED" = 1 ]; then
         echo "$WAN_IF"
+        return 0
+    fi
+    # hotspot.runtime records the interface the last start() actually used. Reuse
+    # it so keepalive/stop/probe act on the same uplink as start().
+    if [ -z "${WAN_IF_ACTIVE:-}" ] && [ -f "$RUNTIME_FILE" ]; then
+        WAN_IF_ACTIVE=$(sed -n 's/^WAN_IF_ACTIVE=//p' "$RUNTIME_FILE" 2>/dev/null | head -n 1)
+    fi
+    if [ -n "${WAN_IF_ACTIVE:-}" ] && ip link show "$WAN_IF_ACTIVE" >/dev/null 2>&1; then
+        echo "$WAN_IF_ACTIVE"
         return 0
     fi
     W=$(ip route show default 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -n 1)
@@ -229,6 +262,71 @@ kill_foreign_dnsmasq() {
     fi
 }
 
+# Is this dnsmasq *ours*? Ours is identified by the state paths it was started
+# with, not by the pidfile: an instance from a previous session whose pidfile was
+# already removed is still ours and still holds UDP/67.
+is_our_dnsmasq_cmd() {
+    case "$1" in
+        *"--pid-file=$PIDFILE"*|*"--dhcp-leasefile=$LEASEFILE"*|*"--dhcp-hostsfile=$HOSTS_FILE"*) return 0 ;;
+    esac
+    return 1
+}
+
+# Kill EVERY dnsmasq of ours, tracked or not, and drop the pidfile.
+#
+# The 2026-09-24 debug log is the reason this exists: a dnsmasq from an earlier
+# session (pid 9557) survived a stop, so the next start's dnsmasq died with
+# "failed to bind DHCP server socket: Address already in use", the script then
+# "adopted" the stale instance, and Android's own tether dnsmasq could never
+# bind either. Clients got an IP from a server whose config nobody could verify.
+kill_our_dnsmasq() {
+    OUR_PID=$(dnsmasq_pid 2>/dev/null) || OUR_PID=""
+    killed=0
+    for proc in /proc/[0-9]*; do
+        pid=${proc#/proc/}
+        [ -n "$OUR_PID" ] && [ "$pid" = "$OUR_PID" ] && continue
+        cmdline=$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null) || continue
+        if is_our_dnsmasq_cmd "$cmdline"; then
+            if kill "$pid" 2>/dev/null; then
+                log "stopped a dnsmasq left over from an earlier session (pid $pid)"
+                killed=1
+            fi
+        fi
+    done
+    if [ -n "$OUR_PID" ]; then
+        kill "$OUR_PID" 2>/dev/null && log "stopped our dnsmasq (pid $OUR_PID)"
+        killed=1
+    fi
+    if [ "$killed" = 1 ]; then
+        # Give the port back before anyone tries to bind it.
+        sleep 1
+        for proc in /proc/[0-9]*; do
+            pid=${proc#/proc/}
+            cmdline=$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null) || continue
+            if is_our_dnsmasq_cmd "$cmdline"; then
+                kill -9 "$pid" 2>/dev/null && log "force-killed dnsmasq pid $pid"
+            fi
+        done
+    fi
+    rm -f "$PIDFILE"
+}
+
+# Does any dnsmasq of ours exist that the pidfile does not know about? The app
+# reports this as a finding: a second DHCP server on the LAN that we cannot
+# control is exactly what "client connects but Obtaining IP fails" looks like.
+our_dnsmasq_orphan_running() {
+    OUR_PID=$(dnsmasq_pid 2>/dev/null) || OUR_PID=""
+    for proc in /proc/[0-9]*; do
+        pid=${proc#/proc/}
+        [ -n "$OUR_PID" ] && [ "$pid" = "$OUR_PID" ] && continue
+        cmdline=$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null) || continue
+        if is_our_dnsmasq_cmd "$cmdline"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 # rp_filter drops DHCPDISCOVER (source 0.0.0.0) on some Android kernels, which
 # looks exactly like a client stuck obtaining an IP. Only touch sysctls when
 # the LAN interface actually exists in /proc, so an off-device self-test cannot
@@ -323,8 +421,14 @@ derive_subnet() {
 write_runtime() {
     # LAN_IF_USED, not LAN_IF: keepalive() sources this file, and a stale LAN_IF
     # here would override the interface hotspot.env was just updated with.
+    # WAN_IF_ACTIVE pins keepalive/stop/probe to the uplink start() really used.
+    # A keepalive must not move STARTED_AT (the app shows session age).
+    if [ -z "${STARTED_AT:-}" ] && [ -f "$RUNTIME_FILE" ]; then
+        STARTED_AT=$(sed -n 's/^STARTED_AT=//p' "$RUNTIME_FILE" 2>/dev/null | head -n 1)
+    fi
     cat > "$RUNTIME_FILE" <<EOF
 LAN_IF_USED=$LAN_IF
+WAN_IF_ACTIVE=${WAN_ACTIVE:-$WAN_IF_ACTIVE}
 LAN_IP=$LAN_IP
 LAN_PREFIX=$LAN_PREFIX
 LAN_SUBNET=$LAN_SUBNET
@@ -332,6 +436,7 @@ DHCP_START=$DHCP_START
 DHCP_END=$DHCP_END
 PORTAL_PORT=$PORTAL_PORT
 DHCP_OWNER=$DHCP_OWNER
+STARTED_AT=${STARTED_AT:-$(date +%s 2>/dev/null || echo 0)}
 EOF
 }
 
@@ -659,6 +764,7 @@ reapply_authorized() {
 start() {
     WAN=$(resolve_wan)
     [ -n "$WAN" ] || die "could not determine the WAN interface; set WAN_IF in $CONF"
+    WAN_ACTIVE="$WAN"
     log "WAN=$WAN LAN=$LAN_IF"
 
     ip link show "$LAN_IF" >/dev/null 2>&1 \
@@ -678,6 +784,13 @@ start() {
     log "NAT: $LAN_SUBNET -> $WAN"
     install_chains "$WAN"
     reapply_authorized
+    echo "$LAN_IF" > "$LAST_IF_FILE" 2>/dev/null || true
+
+    # A dnsmasq from an earlier session (app force-closed, phone rebooted, stop
+    # interrupted) would hold UDP/67 and make ours die with "Address already in
+    # use"; the old code then adopted it and served addresses from a config
+    # nobody had verified. Clear ours first, always.
+    kill_our_dnsmasq
 
     # The Hot 8 (and other Android 9 tether stacks) abort the softap if their
     # dnsmasq cannot bind, and again if we kill it after the AP is up. When the
@@ -755,6 +868,13 @@ keepalive() {
     ensure_jump_first nat PREROUTING HS_NAT
     ensure_jump_first filter FORWARD HS_FWD
     ensure_jump_first filter INPUT HS_IN
+    # A leftover instance from an earlier session must never survive a keepalive:
+    # two of ours would fight over UDP/67 exactly like ours against Android's.
+    if our_dnsmasq_orphan_running; then
+        log "an untracked dnsmasq of ours is running (leftover session) - clearing it"
+        kill_our_dnsmasq
+        DHCP_OWNER=""
+    fi
     # Android rewrites iptables when tethering restarts and leaves the address
     # alone. Reinstall the redirect without flushing that address, or the
     # client has an IP and still never sees the sign-in page.
@@ -766,6 +886,10 @@ keepalive() {
             install_chains "$WAN"
             reapply_authorized
         fi
+    fi
+    WAN_ACTIVE=$(resolve_wan)
+    if [ -n "$WAN_ACTIVE" ]; then
+        ensure_top nat POSTROUTING -o "$WAN_ACTIVE" -s "$LAN_SUBNET" -j MASQUERADE
     fi
     if dnsmasq_pid >/dev/null && foreign_dnsmasq_running; then
         log "Android DHCP came back alongside ours - stepping aside so clients are not stuck obtaining an IP"
@@ -780,10 +904,14 @@ keepalive() {
     fi
     if dnsmasq_pid >/dev/null; then
         block_foreign_dhcp
+        [ -n "$DHCP_OWNER" ] || DHCP_OWNER=ours
+        write_runtime
         return 0
     fi
     if foreign_dnsmasq_running; then
         # Android is the only server. Leave it alone.
+        DHCP_OWNER=android
+        write_runtime
         return 0
     fi
     log "no DHCP server running, starting ours"
@@ -796,11 +924,10 @@ keepalive() {
 
 stop() {
     [ -f "$RUNTIME_FILE" ] && . "$RUNTIME_FILE"
-    if P=$(dnsmasq_pid); then
-        log "stopping dnsmasq (pid $P)"
-        kill "$P" 2>/dev/null
-    fi
-    rm -f "$PIDFILE"
+    # Every instance of ours, not just the one the pidfile names: an orphan is
+    # what makes the next start fail to bind (2026-09-24 debug log, dnsmasq
+    # "failed to bind DHCP server socket: Address already in use").
+    kill_our_dnsmasq
 
     WAN=$(resolve_wan)
     unblock_foreign_dhcp
@@ -959,6 +1086,228 @@ route_only() {
     ip rule show 2>/dev/null
 }
 
+# Re-install only what makes packet forwarding work: ip_forward, the two jumps,
+# the portal/DNS redirects, the masquerade and the policy-routing rules.
+#
+# The app calls this when the uplink changes (WiFi <-> mobile data) and when the
+# watchdog finds the jumps or the masquerade gone. It exists so the app never has
+# to run the full `start` (which restarts DHCP and can therefore drop clients)
+# just to repair routing.
+nat_only() {
+    LAN_IF="${1:-$LAN_IF}"
+    WAN_ACTIVE="${2:-}"
+    LAN_SUBNET="${3:-}"
+    if [ -z "$WAN_ACTIVE" ] || [ -z "$LAN_SUBNET" ]; then
+        [ -f "$RUNTIME_FILE" ] && . "$RUNTIME_FILE"
+        LAN_SUBNET="${LAN_SUBNET:-$3}"
+        WAN_ACTIVE="${WAN_ACTIVE:-$2}"
+    fi
+    [ -n "$WAN_ACTIVE" ] || WAN_ACTIVE=$(resolve_wan)
+    [ -n "$WAN_ACTIVE" ] || die "usage: nat <lan_if> <wan_if> <subnet>"
+    if [ -d "/proc/sys/net/ipv4/conf/$LAN_IF" ]; then
+        echo 1 > /proc/sys/net/ipv4/ip_forward 2>/dev/null || true
+    fi
+    relax_iface
+    install_policy_routing
+    iptables -t nat -N HS_NAT 2>/dev/null || true
+    iptables -t filter -N HS_FWD 2>/dev/null || true
+    iptables -t filter -N HS_IN 2>/dev/null || true
+    ensure_jump_first nat PREROUTING HS_NAT
+    ensure_jump_first filter FORWARD HS_FWD
+    ensure_jump_first filter INPUT HS_IN
+    # Re-add the two redirects only if they are actually missing: -C is cheap but
+    # a blind install every keepalive tick piles up duplicate rules.
+    if ! iptables -t nat -C HS_NAT -i "$LAN_IF" -p tcp --dport 80 \
+            -j REDIRECT --to-ports "$PORTAL_PORT" 2>/dev/null; then
+        iptables -t nat -A HS_NAT -i "$LAN_IF" -p tcp --dport 80 \
+            -j REDIRECT --to-ports "$PORTAL_PORT" 2>/dev/null \
+            || log "FAILED to redirect port 80 to the portal"
+    fi
+    for proto in udp tcp; do
+        if ! iptables -t nat -C HS_NAT -i "$LAN_IF" -p "$proto" --dport 53 \
+                -j REDIRECT --to-ports "$HIJACK_PORT" 2>/dev/null; then
+            iptables -t nat -A HS_NAT -i "$LAN_IF" -p "$proto" --dport 53 \
+                -j REDIRECT --to-ports "$HIJACK_PORT" 2>/dev/null
+        fi
+    done
+    ensure_top nat POSTROUTING -o "$WAN_ACTIVE" -s "$LAN_SUBNET" -j MASQUERADE
+    # The uplink changed: the masquerade for the previous interface is dead
+    # weight, and an unauthenticated client must not slip out through it.
+    log "nat: $LAN_SUBNET -> $WAN_ACTIVE (jumps first, masquerade present)"
+}
+
+# One-shot health snapshot: every fact the app's watchdog needs, in a single
+# root round-trip, as key=value lines it can parse.
+#
+# Why: on the 2026-09-24 debug log the app spent 142 root commands / 170 s of
+# root-shell time in 7 minutes - 12+ commands per watchdog tick, each queueing
+# behind the previous ones (a `cat /proc/net/arp` "took" 15.4 s because it was
+# waiting for the shell). One command per tick removes the queue entirely.
+probe() {
+    [ -f "$RUNTIME_FILE" ] && . "$RUNTIME_FILE"
+    LAN_IF="${1:-${LAN_IF_USED:-$LAN_IF}}"
+    LAN_SUBNET="${LAN_SUBNET:-${LAN_IP%.*}.0/24}"
+    WAN=$(resolve_wan)
+    echo "probe_version=1"
+    echo "lan=$LAN_IF"
+    echo "wan=${WAN:--}"
+    echo "subnet=$LAN_SUBNET"
+    echo "gateway=$LAN_IP"
+    if ip link show "$LAN_IF" >/dev/null 2>&1; then
+        echo "lan_up=$(ip -o link show "$LAN_IF" 2>/dev/null | grep -q 'UP' && echo yes || echo no)"
+    else
+        echo "lan_up=no"
+    fi
+    echo "lan_addr=$(ip -o -4 addr show dev "$LAN_IF" 2>/dev/null | awk '{print $4}' | head -n 1)"
+    echo "ip_forward=$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null)"
+
+    # DHCP ownership, in three states the app can act on:
+    #   dhcp_ours    - the instance our pidfile knows about
+    #   dhcp_orphan  - ours but untracked (a leftover from an earlier session)
+    #   dhcp_foreign - Android's tether dnsmasq
+    if dnsmasq_pid >/dev/null; then echo "dhcp_ours=yes"; else echo "dhcp_ours=no"; fi
+    if our_dnsmasq_orphan_running; then echo "dhcp_orphan=yes"; else echo "dhcp_orphan=no"; fi
+    if foreign_dnsmasq_running; then echo "dhcp_foreign=yes"; else echo "dhcp_foreign=no"; fi
+    echo "dhcp_pid=$(dnsmasq_pid 2>/dev/null || echo -)"
+
+    NATS=$(iptables -t nat -S 2>/dev/null)
+    FILT=$(iptables -t filter -S 2>/dev/null)
+    case "$NATS" in
+        *"-A PREROUTING -j HS_NAT"*) echo "nat_jump=yes" ;;
+        *) echo "nat_jump=no" ;;
+    esac
+    case "$FILT" in
+        *"-A FORWARD -j HS_FWD"*) echo "fwd_jump=yes" ;;
+        *) echo "fwd_jump=no" ;;
+    esac
+    case "$FILT" in
+        *"-A INPUT -j HS_IN"*) echo "in_jump=yes" ;;
+        *) echo "in_jump=no" ;;
+    esac
+    case "$NATS" in
+        *"-A POSTROUTING -o ${WAN} -s ${LAN_SUBNET} -j MASQUERADE"*|*"-o ${WAN} -s ${LAN_SUBNET} -j MASQUERADE"*)
+            echo "masq=yes" ;;
+        *) echo "masq=no" ;;
+    esac
+    case "$NATS" in
+        *"-A HS_NAT -i ${LAN_IF} -p tcp --dport 80 -j REDIRECT --to-ports ${PORTAL_PORT}"*)
+            echo "redirect=yes" ;;
+        *) echo "redirect=no" ;;
+    esac
+    RULES=$(ip rule show 2>/dev/null)
+    case "$RULES" in
+        *"iif $LAN_IF lookup main"*) echo "rule_iif=yes" ;;
+        *) echo "rule_iif=no" ;;
+    esac
+    case "$RULES" in
+        *"to $LAN_SUBNET lookup main"*) echo "rule_subnet=yes" ;;
+        *) echo "rule_subnet=no" ;;
+    esac
+
+    echo "leases=$(grep -c . "$LEASEFILE" 2>/dev/null || echo 0)"
+    echo "authed=$(grep -c . "$AUTHORIZED_FILE" 2>/dev/null || echo 0)"
+    echo "dhcp_reservations=$(grep -c . "$HOSTS_FILE" 2>/dev/null || echo 0)"
+}
+
+# Emergency cleaner / EXIT: leave nothing of ours behind, whatever state the
+# scripts were in when the app died.
+#
+# Unlike stop(), this does not trust hotspot.runtime (it may be stale or gone),
+# does not need the interface to exist any more, and also drops rules that were
+# written for a previous interface name. Read-mostly and idempotent: it is safe
+# to run twice, and safe to run while a gateway is supposed to be up (that is
+# what "EXIT" means).
+cleanup() {
+    ARG_IF="${1:-}"
+    RUNTIME_IF=""
+    RUNTIME_SUBNET=""
+    RUNTIME_WAN=""
+    if [ -f "$RUNTIME_FILE" ]; then
+        RUNTIME_IF=$(sed -n 's/^LAN_IF_USED=//p' "$RUNTIME_FILE" 2>/dev/null | head -n 1)
+        RUNTIME_SUBNET=$(sed -n 's/^LAN_SUBNET=//p' "$RUNTIME_FILE" 2>/dev/null | head -n 1)
+        RUNTIME_WAN=$(sed -n 's/^WAN_IF_ACTIVE=//p' "$RUNTIME_FILE" 2>/dev/null | head -n 1)
+        . "$RUNTIME_FILE"
+    fi
+    # The interface we cleaned up last time: rules for a name the hotspot no
+    # longer uses are invisible otherwise.
+    LAST_IF=""
+    [ -f "$LAST_IF_FILE" ] && LAST_IF=$(cat "$LAST_IF_FILE" 2>/dev/null)
+
+    log "cleanup: removing everything this app put on the system"
+
+    # 1. Every dnsmasq of ours, tracked or orphaned. Android's is left alone.
+    kill_our_dnsmasq
+
+    # 2. Firewall: our chains, our jumps, our per-MAC rules - for the current
+    #    interface and for the one the previous session used.
+    for IFACE in "$ARG_IF" "$RUNTIME_IF" "$LAST_IF" "$LAN_IF"; do
+        [ -n "$IFACE" ] || continue
+        LAN_IF_SAVED="$LAN_IF"
+        LAN_IF="$IFACE"
+        SUBNET_SAVED="$LAN_SUBNET"
+        [ -n "$RUNTIME_SUBNET" ] && LAN_SUBNET="$RUNTIME_SUBNET"
+        remove_legacy_rules "$RUNTIME_WAN"
+        remove_policy_routing
+        # The "drop DHCP replies from anyone but root" guard: leaving it behind
+        # would silently block the NEXT session's DHCP answers (including
+        # Android's, which we step aside for).
+        unblock_foreign_dhcp
+        LAN_SUBNET="$SUBNET_SAVED"
+        LAN_IF="$LAN_IF_SAVED"
+    done
+
+    # 3. The jumps and the chains themselves.
+    delete_all nat PREROUTING -j HS_NAT
+    delete_all filter FORWARD -j HS_FWD
+    delete_all filter INPUT -j HS_IN
+    iptables -t nat -F HS_NAT 2>/dev/null
+    iptables -t nat -X HS_NAT 2>/dev/null
+    iptables -t filter -F HS_FWD 2>/dev/null
+    iptables -t filter -X HS_FWD 2>/dev/null
+    iptables -t filter -F HS_IN 2>/dev/null
+    iptables -t filter -X HS_IN 2>/dev/null
+
+    # 4. Our masquerade on any uplink we ever pinned.
+    for W in "$RUNTIME_WAN" "$WAN_ACTIVE" "$(resolve_wan)"; do
+        [ -n "$W" ] || continue
+        for S in "$RUNTIME_SUBNET" "$LAN_SUBNET" "10.66.0.0/24"; do
+            [ -n "$S" ] || continue
+            delete_all nat POSTROUTING -o "$W" -s "$S" -j MASQUERADE
+        done
+    done
+
+    # 5. IPv6 guards.
+    for IFACE in "$ARG_IF" "$RUNTIME_IF" "$LAST_IF"; do
+        [ -n "$IFACE" ] || continue
+        ip6_delete_all FORWARD -i "$IFACE" -j DROP
+        ip6_delete_all INPUT -i "$IFACE" -j DROP
+        ip6_delete_all OUTPUT -o "$IFACE" -p icmpv6 --icmpv6-type router-advertisement -j DROP
+    done
+
+    # 6. Shaping and the root hostapd (netshare fallback), if either is present.
+    sh "$(dirname "$0")/bandwidth_control.sh" stop 2>/dev/null
+    if [ -f "$(dirname "$0")/netshare_ap.sh" ]; then
+        sh "$(dirname "$0")/netshare_ap.sh" stop >/dev/null 2>&1
+    fi
+    # Any hostapd that is managing *our* state file.
+    if [ -f "$STATE_DIR/netshare_hostapd.pid" ]; then
+        HP=$(cat "$STATE_DIR/netshare_hostapd.pid" 2>/dev/null)
+        if [ -n "$HP" ] && kill -0 "$HP" 2>/dev/null; then
+            kill "$HP" 2>/dev/null && log "cleanup: stopped the root-hostapd (pid $HP)"
+        fi
+        rm -f "$STATE_DIR/netshare_hostapd.pid"
+    fi
+
+    # 7. State files: a stale pidfile or runtime file is what makes the *next*
+    #    start adopt a process that is no longer ours.
+    rm -f "$PIDFILE" "$RUNTIME_FILE" "$STATE_DIR/netshare.runtime"
+    rm -f "$STATE_DIR/dnsmasq_hotspot.log.old"
+    if [ -f "$LAST_IF_FILE" ]; then
+        rm -f "$LAST_IF_FILE"
+    fi
+    log "cleanup complete"
+}
+
 # "yes" when a DHCP server that is not ours is running. The app's watchdog uses
 # this to explain a client stuck on "Obtaining IP address".
 foreign_dhcp() {
@@ -1050,9 +1399,12 @@ case "${1:-}" in
     reserve)      reserve "${2:-}" "${3:-}" ;;
     unreserve)    unreserve "${2:-}" ;;
     route)        route_only "${2:-}" "${3:-}" ;;
+    nat)          nat_only "${2:-}" "${3:-}" "${4:-}" ;;
+    probe)        probe "${2:-}" ;;
+    cleanup)      cleanup "${2:-}" ;;
     foreign-dhcp) foreign_dhcp ;;
     free-dns)     free_dns ;;
     procs)        procs ;;
     diag)         diag ;;
-    *) echo "usage: $0 {start|stop|status|keepalive|diag|route <lan_if> <subnet>|foreign-dhcp|free-dns|procs|authorize <mac> <ip> [cur_ip]|deauthorize <mac>|reserve <mac> <ip>|unreserve <mac>}" ;;
+    *) echo "usage: $0 {start|stop|status|keepalive|cleanup [lan_if]|probe [lan_if]|nat <lan_if> <wan_if> <subnet>|diag|route <lan_if> <subnet>|foreign-dhcp|free-dns|procs|authorize <mac> <ip> [cur_ip]|deauthorize <mac>|reserve <mac> <ip>|unreserve <mac>}" ;;
 esac

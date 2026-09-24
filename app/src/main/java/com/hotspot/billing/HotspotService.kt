@@ -34,6 +34,7 @@ import com.hotspot.billing.core.BillingManager
 import com.hotspot.billing.core.DeviceManager
 import com.hotspot.billing.core.DhcpManager
 import com.hotspot.billing.core.DnsManager
+import com.hotspot.billing.core.EmergencyCleaner
 import com.hotspot.billing.core.FirewallManager
 import com.hotspot.billing.core.NatManager
 import com.hotspot.billing.core.NetworkController
@@ -46,6 +47,7 @@ import com.hotspot.billing.net.ApLauncher
 import com.hotspot.billing.net.ApMode
 import com.hotspot.billing.net.IpPool
 import com.hotspot.billing.net.LanPlan
+import com.hotspot.billing.net.LeaseParser
 import com.hotspot.billing.net.SoftApController
 import com.hotspot.billing.net.VoucherManager
 import com.hotspot.billing.portal.CaptivePortalServer
@@ -73,7 +75,7 @@ import kotlinx.coroutines.withContext
  */
 class HotspotService : android.app.Service() {
 
-    enum class Phase { STARTING, WAITING_AP, RUNNING, STOPPED, ERROR }
+    enum class Phase { STARTING, WAITING_AP, RUNNING, STOPPING, STOPPED, ERROR }
 
     /** Everything the admin UI displays; individual fields are volatile so the
      *  activity can poll them from the main thread safely. */
@@ -140,6 +142,12 @@ class HotspotService : android.app.Service() {
     private lateinit var usageMonitor: UsageMonitor
     private var currentApHandle: ApHandle? = null
     private var currentHotspotSessionId: Long? = null
+    private lateinit var emergencyCleaner: EmergencyCleaner
+
+    /** Cached for the UI: the phone reads the shell, the activity reads this. */
+    @Volatile private var cachedClients: List<LeaseParser.Lease> = emptyList()
+    @Volatile private var cachedEnv: String = ""
+    @Volatile private var cachedEnvAt = 0L
 
     /** Codes currently reported by the watchdog, so a finding is logged once. */
     private val reportedFindings = LinkedHashSet<String>()
@@ -161,6 +169,16 @@ class HotspotService : android.app.Service() {
         deviceManager = DeviceManager(db)
         billingManager = BillingManager(db, voucherManager)
         usageMonitor = UsageMonitor(db)
+        emergencyCleaner = EmergencyCleaner(
+            stopPortal = { portal?.stop(); portal = null },
+            releaseAp = {
+                currentApHandle?.close { log(it) }
+                currentApHandle = null
+                launcher.release { log(it) }
+                SoftApController.stopAp { log(it) }
+            },
+            log = { log(it) }
+        )
         createChannel()
         registerStateReceivers()
         startInForeground()
@@ -207,8 +225,40 @@ class HotspotService : android.app.Service() {
 
     /** Tear everything down but keep the (silent) service alive. */
     fun stopSequence() {
+        // Immediate feedback: the button says STOPPING the moment it is pressed,
+        // the slow part happens in the background.
+        if (state.phase != Phase.STOPPED) {
+            state.phase = Phase.STOPPING
+            state.message = "Stopping..."
+            updateNotification()
+        }
         gatewayJob?.cancel()
         gatewayJob = scope.launch { teardown() }
+    }
+
+    /**
+     * EXIT & clean stop: tear everything down, then close the service and its
+     * notification. Anything the previous crash may have left behind (an
+     * untracked dnsmasq, a firewall chain, a tc class, the P2P group) is removed
+     * by [EmergencyCleaner], not just the parts this process knows about.
+     */
+    fun exitAndClean() {
+        if (state.phase != Phase.STOPPED) {
+            state.phase = Phase.STOPPING
+            state.message = "Stopping everything..."
+            updateNotification()
+        }
+        gatewayJob?.cancel()
+        gatewayJob = scope.launch {
+            teardown()
+            try {
+                stopForeground(true)
+            } catch (e: Throwable) {
+                AppLog.w(AppLog.TAG_SERVICE, "could not drop the notification: ${e.message}")
+            }
+            log("EXIT: everything is off, the service is closing")
+            stopSelf()
+        }
     }
 
     /** Apply new settings: full stop, then start again. */
@@ -323,6 +373,12 @@ class HotspotService : android.app.Service() {
         log("deploying network scripts")
         deployScripts()
         startLogcatWatcher()
+
+        // "Restart app -> old sessions cleaned" (master plan TEST 7). A dnsmasq,
+        // a firewall chain or a tc class left by a previous process would fight
+        // the new session: the 2026-09-24 log's "Address already in use" came
+        // from exactly that. Cost: one root command.
+        emergencyCleaner.cleanupEverything("starting a new session")
 
         // Ensure default voucher plans exist (Phase 8)
         try {
@@ -461,24 +517,50 @@ class HotspotService : android.app.Service() {
         }
     }
 
-    /** One pass of the watchdog. Returns false when the gateway should stop. */
+    /**
+     * One pass of the watchdog. Returns false when the gateway should stop.
+     *
+     * Cost per tick is now: ONE root command (the probe, cached for 2 s) plus the
+     * work that is actually needed. The previous version asked the shell ~15
+     * times per tick and called `setup_network.sh keepalive` on every pass - that
+     * command reports 20 s on the device, so an 8 s tick could never keep up and
+     * the root shell was permanently busy. Keepalive is now a repair, not a
+     * heartbeat: it runs only when the probe says something is missing.
+     */
     private suspend fun monitorOnce(): Boolean {
         monitorTicks++
-        val lan = SoftApController.apInterface(state.lanIf)
 
-        // --- New: Use WatchdogManager for granular heal ---
+        // Someone else is holding the root shell (a start, a stop, a voucher
+        // redemption): do not pile more commands on top of it, and do not report
+        // findings from a half-applied state either.
+        if (RootShell.isBusy()) {
+            AppLog.i(AppLog.TAG_WATCHDOG, "root shell busy - skipping this watchdog tick")
+            return true
+        }
+
+        val probe = RootShell.probe(state.lanIf)
+
+        // If the probe cannot answer (script missing, shell unavailable), fall
+        // back to the interface check we have always used.
+        val lan = when {
+            probe != null -> if (probe.lanUp == true) (probe.lanIf ?: state.lanIf) else null
+            else -> SoftApController.apInterface(state.lanIf)
+        }
+
+        if (lan != null && state.lanIf == null) {
+            state.lanIf = lan
+        }
+
         val watchdogResult = withContext(Dispatchers.IO) {
             watchdogManager.check(state.lanIf)
         }
 
         if (watchdogResult.issues.isNotEmpty()) {
-            log("watchdog: check found issues: ${watchdogResult.issues.joinToString()}")
-            // Try granular heal first
+            log("watchdog: ${watchdogResult.issues.joinToString()}")
             val healed = withContext(Dispatchers.IO) {
                 watchdogManager.heal(watchdogResult) { log(it) }
             }
             if (!healed) {
-                // AP gone or critical failure -> fallback to full recovery path
                 if (!watchdogResult.apAlive) {
                     log("watchdog: LAN interface ${state.lanIf ?: "?"} disappeared")
                     if (launcher.current()?.interfaceName == state.lanIf) launcher.noteSystemTookTheAp { log(it) }
@@ -499,7 +581,7 @@ class HotspotService : android.app.Service() {
         }
 
         if (lan == null) {
-            log("watchdog: LAN interface ${state.lanIf ?: "?"} disappeared (legacy check)")
+            log("watchdog: LAN interface ${state.lanIf ?: "?"} disappeared")
             if (launcher.current()?.interfaceName == state.lanIf) launcher.noteSystemTookTheAp { log(it) }
             state.phase = Phase.WAITING_AP
             state.message = "Hotspot went off - switch it back on, the gateway re-arms itself."
@@ -515,32 +597,22 @@ class HotspotService : android.app.Service() {
             return true
         }
 
-        // Do NOT treat "address is not 10.66.0.1" as drift. Forcing that address
-        // back every few seconds is what left clients looping on "Obtaining IP".
-        val plan = RootShell.readLanPlan()
-        val addrs = RootShell.lanAddresses(lan)
-        val gateway = plan?.gateway
-        val addrOk = gateway != null && addrs.any { it.substringBefore('/') == gateway }
-        if (!addrOk) {
-            log(
-                "hotspot address is ${addrs.joinToString().ifBlank { "missing" }} " +
-                    "(expected ${gateway ?: "unset"}) - adopting it"
-            )
+        // The address is reported by the probe; only when it is genuinely gone do
+        // we re-run the gateway configuration.
+        if (probe != null && probe.lanAddress.isNullOrBlank()) {
+            log("hotspot address is missing on $lan - re-applying the gateway configuration")
             if (!configureGateway(lan)) return false
             return true
         }
-
-        val keep = RootShell.keepaliveNetwork()
-        keep.out.forEach { if (it.isNotBlank()) log(it) }
-        RootShell.readLanPlan()?.let { refreshed ->
-            state.gatewayIp = refreshed.gateway
-            state.dhcpOwner = refreshed.dhcpOwner
-        }
+        probe?.gateway?.let { state.gatewayIp = it }
+        state.wanIf = probe?.wanIf ?: state.wanIf
+        DhcpManager.owner()?.let { state.dhcpOwner = it }
 
         voucherManager.sweepExpired()
         refreshStats()
 
-        // Usage monitoring every tick (Phase 11)
+        // Usage monitoring every tick (Phase 11). It reads the same cached leases
+        // and one iptables counter dump.
         try {
             val usageStats = usageMonitor.collectUsage(lan)
             usageMonitor.updateDatabase(usageStats)
@@ -552,8 +624,8 @@ class HotspotService : android.app.Service() {
             AppLog.w(AppLog.TAG_NET, "usage monitor failed ${e.message}")
         }
 
-        // The deep health check is expensive (a dozen shell commands and an HTTP
-        // probe), so it runs every DEEP_CHECK_EVERY_TICKS passes, not every one.
+        // The deep health check is expensive (an HTTP probe), so it runs every
+        // DEEP_CHECK_EVERY_TICKS passes, not every one.
         if (monitorTicks % DEEP_CHECK_EVERY_TICKS == 0) {
             healthCheck(report = false)
         }
@@ -568,20 +640,27 @@ class HotspotService : android.app.Service() {
      */
     private suspend fun healthCheck(report: Boolean): List<Finding> = withContext(Dispatchers.IO) {
         val lan = state.lanIf
-        val interfaces = try {
-            RootShell.interfaces()
-        } catch (e: Throwable) {
-            emptyList()
-        }
-        val lanExists = lan != null && interfaces.any { it.first == lan }
-        val addresses = if (lan != null && lanExists) {
-            try { RootShell.lanAddresses(lan) } catch (e: Throwable) { emptyList() }
-        } else {
-            emptyList()
-        }
+
+        // One command for everything the health rules look at (interfaces,
+        // address, dnsmasq ownership, jumps, masquerade, portal redirect,
+        // policy routing, lease/authorized counts).
+        val rp = RootShell.probe(lan, fresh = report)
         val plan = RootShell.readLanPlan()
-        val probe = if (report || state.phase == Phase.RUNNING) {
-            val gw = plan?.gateway ?: state.gatewayIp
+        val lanExists = rp?.lanUp ?: (lan != null && (try {
+            RootShell.interfaces().any { it.first == lan }
+        } catch (e: Throwable) {
+            false
+        }))
+        val addresses = rp?.lanAddress?.let { listOf(it) }
+            ?: if (lan != null && lanExists) {
+                try { RootShell.lanAddresses(lan) } catch (e: Throwable) { emptyList() }
+            } else {
+                emptyList()
+            }
+        // The HTTP probe is the only expensive check left, and only the debugger
+        // and the deep tick pay for it.
+        val portalProbe = if (report || state.phase == Phase.RUNNING) {
+            val gw = rp?.gateway ?: plan?.gateway ?: state.gatewayIp
             if (gw != null && state.portalRunning) {
                 HttpProbe.get("http://$gw/generate_204", 3_000).status
             } else {
@@ -590,8 +669,8 @@ class HotspotService : android.app.Service() {
         } else {
             null
         }
-        val authorized = try {
-            RootShell.run("cat /data/local/tmp/authorized_macs.txt 2>/dev/null", quiet = true)
+        val authorized = rp?.authorized ?: try {
+            RootShell.run("cat $AUTHORIZED_FILE 2>/dev/null; true", quiet = true)
                 .out.count { it.isNotBlank() }
         } catch (e: Throwable) {
             0
@@ -601,26 +680,24 @@ class HotspotService : android.app.Service() {
             lanIf = lan,
             lanInterfaceExists = lanExists,
             lanAddresses = addresses,
-            expectedGateway = plan?.gateway,
-            ipForwardEnabled = try { RootShell.ipForwardEnabled() } catch (e: Throwable) { null },
-            ourDnsmasqRunning = try { RootShell.isDnsmasqRunning() } catch (e: Throwable) { false },
-            foreignDnsmasqRunning = try { RootShell.isForeignDnsmasqRunning() } catch (e: Throwable) { false },
-            dhcpOwner = plan?.dhcpOwner ?: state.dhcpOwner,
+            expectedGateway = rp?.gateway ?: plan?.gateway,
+            ipForwardEnabled = rp?.ipForward
+                ?: (try { RootShell.ipForwardEnabled() } catch (e: Throwable) { null }),
+            ourDnsmasqRunning = rp?.dhcpOurs == true || rp?.dhcpOrphan == true ||
+                (rp == null && (try { RootShell.isDnsmasqRunning() } catch (e: Throwable) { false })),
+            foreignDnsmasqRunning = rp?.dhcpForeign
+                ?: (try { RootShell.isForeignDnsmasqRunning() } catch (e: Throwable) { false }),
+            dhcpOwner = DhcpManager.owner() ?: plan?.dhcpOwner ?: state.dhcpOwner,
             portalAlive = portal?.isAlive == true,
-            portalProbeStatus = probe,
-            natJumpFirst = try {
-                RootShell.jumpIsFirst("nat", "PREROUTING", "HS_NAT")
-            } catch (e: Throwable) { null },
-            forwardJumpFirst = try {
-                RootShell.jumpIsFirst("filter", "FORWARD", "HS_FWD")
-            } catch (e: Throwable) { null },
+            portalProbeStatus = portalProbe,
+            natJumpFirst = rp?.natJump
+                ?: (try { RootShell.jumpIsFirst("nat", "PREROUTING", "HS_NAT") } catch (e: Throwable) { null }),
+            forwardJumpFirst = rp?.forwardJump
+                ?: (try { RootShell.jumpIsFirst("filter", "FORWARD", "HS_FWD") } catch (e: Throwable) { null }),
             wanIf = state.wanIf,
-            defaultRouteIf = try { RootShell.defaultRouteInterface() } catch (e: Throwable) { null },
-            policyRoutingOk = if (lan != null && lanExists) {
-                try { RootShell.policyRoutingOk(lan) } catch (e: Throwable) { null }
-            } else {
-                null
-            },
+            defaultRouteIf = rp?.wanIf
+                ?: (try { RootShell.defaultRouteInterface() } catch (e: Throwable) { null }),
+            policyRoutingOk = rp?.let { it.ruleIif == true && it.ruleSubnet == true },
             connectedClients = state.onlineClients,
             authorizedClients = authorized,
             apKind = state.apKind
@@ -651,7 +728,7 @@ class HotspotService : android.app.Service() {
             log(
                 "health check: ${if (findings.isEmpty()) "no problems found"
                 else findings.joinToString { it.code }} " +
-                    "(dnsmasq ours=${input.ourDnsmasqRunning} android=${input.foreignDnsmasqRunning}, " +
+                    "(probe ${rp?.tookMs ?: -1}ms, dnsmasq ours=${input.ourDnsmasqRunning} android=${input.foreignDnsmasqRunning}, " +
                     "owner=${input.dhcpOwner}, forward=${input.ipForwardEnabled}, " +
                     "routing=${input.policyRoutingOk}, portal=${input.portalAlive}/probe=${input.portalProbeStatus})"
             )
@@ -747,26 +824,14 @@ class HotspotService : android.app.Service() {
     }
 
     private suspend fun teardown() = withContext(Dispatchers.IO) {
+        val started = System.currentTimeMillis()
         log("stopping gateway")
-        try { portal?.stop() } catch (e: Exception) { /* already stopped */ }
-        portal = null
-        portalGateway = null
-        state.portalRunning = false
 
-        // Use NetworkController STOP for clean shutdown
-        try {
-            networkController.stop(currentApHandle) { log(it) }
-        } catch (e: Throwable) {
-            AppLog.w(AppLog.TAG_SERVICE, "networkController stop failed ${e.message}")
-            // Fallback to old method
-            try { RootShell.stopBandwidth() } catch (e2: Exception) { /* nothing to stop */ }
-            try { RootShell.stopNetwork() } catch (e2: Exception) { /* nothing to stop */ }
-        }
+        // One call that stops the portal, removes every rule/process/state file of
+        // ours (including leftovers from an earlier session) and releases the AP -
+        // the rule removal and the AP release run at the same time.
+        val clean = emergencyCleaner.cleanupEverything("Stop pressed", state.lanIf)
 
-        currentApHandle?.close { log(it) }
-        currentApHandle = null
-
-        // Close hotspot session
         currentHotspotSessionId?.let { id ->
             try {
                 db.hotspotSessionDao().close(id, System.currentTimeMillis(), "STOPPED", 0)
@@ -777,27 +842,19 @@ class HotspotService : android.app.Service() {
             currentHotspotSessionId = null
         }
 
+        if (!clean) {
+            log("gateway stopped with leftovers - see the warnings above (${System.currentTimeMillis() - started}ms)")
+        } else {
+            log("gateway stopped cleanly in ${System.currentTimeMillis() - started}ms")
+        }
+
         launcher.release { log(it) }
-        SoftApController.stopAp { log(it) }
+        RootShell.invalidateCaches()
         state.reset()
         state.phase = Phase.STOPPED
         state.message = "Stopped"
         reportedFindings.clear()
-        log("gateway stopped")
         updateNotification()
-    }
-
-    /** Polls for the hotspot interface; returns it, or null on timeout/cancel. */
-    private suspend fun waitForLanInterface(timeoutMs: Long): String? {
-        val started = SystemClock.elapsedRealtime()
-        while (true) {
-            val pinned = prefs.getString(KEY_LAN_IF, null)?.trim()?.takeIf { it.isNotEmpty() }
-            SoftApController.apInterface(pinned)?.let { return it }
-            if (timeoutMs != Long.MAX_VALUE &&
-                SystemClock.elapsedRealtime() - started > timeoutMs
-            ) return null
-            delay(POLL_INTERVAL_MS)
-        }
     }
 
     private fun writeEnvFromPrefs() {
@@ -832,7 +889,12 @@ class HotspotService : android.app.Service() {
 
     /** Client count + auto-recording of every device seen on the LAN. */
     private fun refreshStats() {
+        // Cached reads: the lease file and ARP are also polled by the UI and by the
+        // voucher sweep, and four processes used to run the same `cat` within the
+        // same second (visible as parallel `cat /proc/net/arp` lines in the
+        // 2026-09-24 debug log).
         val leases = RootShell.connectedClients(state.lanIf)
+        cachedClients = leases
         state.onlineClients = leases.size
         val dao = db.deviceProfileDao()
         val now = System.currentTimeMillis()
@@ -845,6 +907,34 @@ class HotspotService : android.app.Service() {
                 val hostname = lease.hostname.ifBlank { existing.hostname }
                 dao.upsert(existing.copy(hostname = hostname, lastSeen = now))
             }
+        }
+    }
+
+    // ---------------------------------------------------------------- read-only views for the UI
+
+    /**
+     * Devices on the LAN, last collected by the watchdog. The activity polls this
+     * from the main thread, so it must not touch the shell: the UI used to run
+     * four root commands every 3 seconds, which is a large part of why the root
+     * shell was permanently busy in the 2026-09-24 log.
+     */
+    fun clientsSnapshot(): List<LeaseParser.Lease> = cachedClients
+
+    /** hotspot.env + hotspot.runtime, re-read at most every 10 s. */
+    suspend fun envSnapshot(): String {
+        val age = System.currentTimeMillis() - cachedEnvAt
+        if (cachedEnv.isNotBlank() && age < ENV_TTL_MS) return cachedEnv
+        return withContext(Dispatchers.IO) {
+            val text = try {
+                val env = RootShell.readEnvFile()
+                val runtime = RootShell.readRuntimeFile().ifBlank { "(runtime not written yet)" }
+                "$env\n---\n$runtime"
+            } catch (e: Throwable) {
+                "(could not read the state files: ${e.message})"
+            }
+            cachedEnv = text
+            cachedEnvAt = System.currentTimeMillis()
+            text
         }
     }
 
@@ -1056,6 +1146,8 @@ class HotspotService : android.app.Service() {
         private const val EXTRA_AP_STATE = "wifi_state"
 
         private const val SCRIPT_DIR = "/data/local/tmp"
+        private const val AUTHORIZED_FILE = "/data/local/tmp/authorized_macs.txt"
+        private const val ENV_TTL_MS = 10_000L
         private val SCRIPTS = listOf("setup_network.sh", "bandwidth_control.sh", "netshare_ap.sh")
         private const val MONITOR_INTERVAL_MS = 8_000L
         private const val POLL_INTERVAL_MS = 2_000L

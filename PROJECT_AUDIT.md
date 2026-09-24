@@ -218,3 +218,85 @@ Before release: run `bash tools/run-script-selftest.sh` and `./gradlew test` (un
 5. Implement granular Watchdog: check AP alive, DHCP alive, DNS alive, Internet alive, Clients alive; restart only failed component
 
 This audit satisfies Phase 0. Next step is Phase 1 implementation.
+
+---
+
+# Phase 1 — Log forensics and fixes (2026-09-24)
+
+Evidence: `Debuggerfitst semi success.txt` — 939-line event log, Infinix X650C, Android 9 (API 28),
+MediaTek, rooted, app `1.0.27+f35d949`, phase RUNNING when exported.
+
+## 9. What the log proves works (must not break while fixing the rest)
+
+- AP: WiFi Direct group owner, `p2p0`, SSID `DIRECT-5O-Infinix HOT 8`, address adopted `192.168.49.1/24`.
+- DHCP: client `a4:4e:31:83:ec:3c` got `192.168.49.10` (`DHCPACK` at 12:39:25), gateway/DNS `192.168.49.1`.
+- NAT/policy routing: `HS_NAT`/`HS_FWD` first, `ip_forward=1`, `ip rule 15500/15501` present, `ping 8.8.8.8 -> true`.
+- Voucher: portal served the page, `redeem` reserved the IP, authorized the MAC and added the `tc` class.
+
+## 10. Problems, with the line that shows each one
+
+| # | Problem | Evidence in the log | Measured cost |
+| --- | --- | --- | --- |
+| 1 | START took **74 s** (target < 10 s) | `+6s START requested` → `+80s START SUCCESS`; DHCP step 25.7 s, DNS step 15.3 s, NAT step 31.0 s | 3 of the 6 steps are 90 % of the time |
+| 2 | Random SSID/password | requested `ssid=RNS-Hotspot`; `setNetworkName`/`setPassphrase` → `NoSuchFieldException`, `createGroup(config)` → `NoSuchMethodException`; group came up as `DIRECT-5O-Infinix HOT 8` / `kamm4fFC` | Android 9 blocks the pinned-method path |
+| 3 | DHCP bind race | `dnsmasq: failed to bind DHCP server socket: Address already in use` / `FAILED to start up` at 12:37:11 — previous session's dnsmasq (pid 9557) still held UDP/67 and was then "adopted" | the new server never binds until the old one dies |
+| 4 | Root shell is the bottleneck | 142 commands, **170.7 s** of shell time in 7 min; `setup_network.sh keepalive` 5× avg 18.1 s (Σ 90.6 s), `cat dnsmasq.leases` 104×, `cat /proc/net/arp` 6× avg 3.07 s (max 15.4 s), `authorize` avg 3.86 s (max 20.9 s) | every slow command starves every other caller |
+| 5 | Duplicate work on one voucher | 3× `POST /redeem` for `HCSQ-KEBE` in 40 s, 6 `authorize` calls, 9 `bandwidth_control.sh` calls | same contention, plus repeated firewall writes |
+| 6 | Stop/exit untested and heavy | no `stop`/`STOP` line in the log at all; `stopSequence` had no fast path and never ran `cleanup` | cannot be judged from this log — reviewed in code instead |
+| 7 | Watchdog was a second hog | each tick ran `defaultRouteInterface`, `interfaces`, `isDnsmasqRunning`, `isForeignDnsmasqRunning`, `policyRoutingOk` ×2, `checkFirewallHealth` (2× `iptables -S`), `readLanPlan`, `lanAddresses`, then the 18 s `keepalive` | ~15 shell calls per 8 s tick |
+
+Ambient noise (not ours, do not chase): `MtkDataShaping.openLteGateByDataShaping` NPE every ~10 s,
+`WifiVendorHal getWifiLinkLayerStats ERROR_NOT_SUPPORTED`, `WifiP2pService Unhandled message`.
+
+Root cause of 1/4/5/7 is one and the same: **libsu runs the jobs of one shell strictly one after
+another**, and the code asked that shell dozens of times per poll from the UI thread pool, the
+watchdog, the portal and the voucher path at once.
+
+## 11. What was changed for this phase (file by file)
+
+| File | Change | Why |
+| --- | --- | --- |
+| `util/RootShell.kt` | fair lock with wait logging, `tryRun()` (returns null when the shell is busy), `Probe` (one command → 19 fields, 2 s cache), lease/arp caches, `repairNat()`, `cleanupAll()`, `invalidateCaches()` | one choke point; hot paths can skip instead of queueing |
+| `scripts/setup_network.sh` | new `probe`, `nat <lan> <wan> <subnet>`, `cleanup [lan]` subcommands; `cleanup` also removes the port-67 OUTPUT guard for every known interface; dnsmasq killed by ownership, not only by pidfile | lets the app read state in one command and repair NAT without restarting DHCP |
+| `core/DhcpManager.kt` | start verified from one fresh probe; `owner()` → `ours` / `ours-orphan` / `android` / `none` | detect the pid-9557 case instead of adopting a stranger |
+| `core/DnsManager.kt` | probe-based health, no duplicate checks | watchdog cost |
+| `core/NatManager.kt` | `enableNat` = `repairNat` + verify; `forwardingHealthy()` | fixes the NAT step and the `masquerade present=false` false negative |
+| `core/FirewallManager.kt` | redirect-aware health check, authorised list from one file | portal must not be reported broken while the redirect is in place |
+| `core/WatchdogManager.kt` | `check()` = one probe; `heal()` repairs NAT first and rate-limits DHCP restarts to 20 s | off-tick heartbeats; never restart the whole hotspot to fix one part |
+| `core/NetworkController.kt` | WAN detected once and pinned to `hotspot.env`; AP → 250 ms/4 s address poll; DHCP ∥ NAT in parallel; one probe; internet test; `stop()` = one script call + leftover report | the 74 s start |
+| `core/EmergencyCleaner.kt` (new) | portal first, then rules ∥ AP release, verify with a fresh probe, retry once | leaks survive a crash; the master plan's `cleanupEverything()` |
+| `HotspotService.kt` | `Phase.STOPPING`, `exitAndClean()`, busy-skip monitor tick, deep check every 8 ticks, teardown through the cleaner, `clientsSnapshot()`/`envSnapshot()` | instant STOP feedback, no root work from the UI |
+| `net/VoucherManager.kt` | 20 s re-apply cooldown per code | 3× redeem in 40 s |
+| `net/ArpResolver.kt` | reads the shared arp/lease cache | 15.4 s `cat /proc/net/arp` |
+| `core/UsageMonitor.kt` | one counter dump + one lease read per tick (was one process per matched rule) | 104 lease reads |
+| `MainActivity.kt`, `res/layout/activity_main.xml`, `res/values/strings.xml` | EXIT button calling `exitAndClean()`, `STOPPING...` shown immediately, poller uses the cached snapshots | problems 6 and 7 from the UI side |
+
+## 12. Verification status (honest)
+
+- `bash tools/run-script-selftest.sh` → **ALL CHECKS PASSED** (~12 s). It asserts the shell layer
+  against stub `iptables`/`ip`/`tc`/`dnsmasq`: probe keys, cleanup of an untracked dnsmasq and of
+  the port-67 guard, `nat` re-install without a DHCP restart and without duplicate redirects,
+  idempotent `keepalive`, orphan handling.
+- The Kotlin side **was not compiled or run here**: this sandbox has no JDK, no Gradle, no
+  `kotlinc` and no network. CI (`.github/workflows/apk.yml`) builds the APK and runs the unit tests
+  on push/PR; device tests 1–7 of the master plan are still outstanding.
+- Instead of a compiler, the whole tree was cross-referenced statically (every `Class.member`
+  and every `manager.method()` used in the touched files against the declarations). That found one
+  real break — `NetworkController.start()` calling a `waitForLanInterface` that only existed in
+  `HotspotService` — which is now a private helper of `NetworkController` (250 ms poll for the
+  pinned/framework AP interface); the now-dead copy in the service was deleted. The remaining
+  matches are nested classes/enum constants that the checker does not model.
+- Nothing in this document is a device test result.
+
+## 13. Still open after this phase
+
+1. Honest SSID/password path: keep `RNS` / `RNSRNSRNS` as the requested values, show the real
+   active pair in the UI, and never present a random credential as the configured one (the
+   WiFi Direct route cannot be forced on Android 9 — the fallbacks that can, must be preferred).
+2. `ClientAuthorizationManager`: one class owning MAC → portal → voucher → firewall, replacing the
+   authorise calls scattered between `VoucherManager`, `FirewallManager` and the portal.
+3. Room: `dhcp_leases`, `voucher_usage`, `payments`, `system_logs` (+ indexes) as listed in the
+   master plan; `hotspot_sessions` and `clients` already exist.
+4. `logs/` directory with `network.log`, `error.log`, `voucher.log`, `system.log` written by
+   `AppLog`, in addition to the current single `applog.txt`.
+5. Printer integration and the production test pass (master list 1–7).

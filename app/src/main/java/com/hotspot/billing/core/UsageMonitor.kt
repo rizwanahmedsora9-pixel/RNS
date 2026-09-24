@@ -28,74 +28,58 @@ class UsageMonitor(
         if (lanIf == null) return@withContext emptyList()
 
         try {
-            // Try reading iptables counters with -v
-            val result = RootShell.run("iptables -t filter -L HS_FWD -v -n -x 2>/dev/null", quiet = true)
-            val stats = mutableMapOf<String, UsageStats>()
+            // One counter dump for the whole tick. The previous version called
+            // readLeases() once per matched rule - N processes for one answer.
+            val result = RootShell.run("iptables -t filter -L HS_FWD -v -n -x 2>/dev/null; true", quiet = true)
+            val leases = RootShell.leases()
+            val byMac = LinkedHashMap<String, UsageStats>()
 
-            // Also try reading from /proc/net/dev for interface totals
-            val devResult = RootShell.run("cat /proc/net/dev 2>/dev/null | grep $lanIf", quiet = true)
-
-            // Parse iptables output: pkts bytes target prot ...
-            // Example: "  100  50000 ACCEPT all -- * * 192.168.49.10 0.0.0.0"
             result.out.forEach { line ->
-                if (!line.contains("ACCEPT") && !line.contains("HS_")) return@forEach
-                // Extract IP and bytes
-                val ipMatch = Regex("""(\d+\.\d+\.\d+\.\d+)""").findAll(line).toList()
-                val bytesMatch = Regex("""^\s*\d+\s+(\d+)""").find(line)
+                if (!line.contains("ACCEPT")) return@forEach
+                val ip = Regex("""(\d+\.\d+\.\d+\.\d+)""").find(line)?.value ?: return@forEach
+                val bytes = Regex("""^\s*(\d+)\s+(\d+)""").find(line)?.groupValues?.get(2)?.toLongOrNull()
+                    ?: return@forEach
+                val mac = macFor(ip, leases) ?: return@forEach
+                val existing = byMac[mac]
+                byMac[mac] = if (existing == null) {
+                    UsageStats(mac, ip, downloadBytes = bytes, uploadBytes = 0, totalBytes = bytes)
+                } else {
+                    existing.copy(
+                        downloadBytes = existing.downloadBytes + bytes,
+                        totalBytes = existing.totalBytes + bytes
+                    )
+                }
+            }
 
-                if (ipMatch.isNotEmpty() && bytesMatch != null) {
-                    val bytes = bytesMatch.groupValues[1].toLongOrNull() ?: 0L
-                    val ip = ipMatch.firstOrNull()?.value ?: return@forEach
-
-                    // Try to find MAC for this IP from leases
-                    val mac = findMacForIp(ip) ?: return@forEach
-
-                    val existing = stats[mac]
-                    if (existing == null) {
-                        stats[mac] = UsageStats(mac, ip, downloadBytes = bytes, uploadBytes = 0, totalBytes = bytes)
-                    } else {
-                        // Heuristic: if line contains dst IP, it's download
-                        val isDownload = line.contains("dst") || line.contains(ip) && line.contains("0.0.0.0/0")
-                        if (isDownload) {
-                            stats[mac] = existing.copy(downloadBytes = existing.downloadBytes + bytes, totalBytes = existing.totalBytes + bytes)
-                        } else {
-                            stats[mac] = existing.copy(uploadBytes = existing.uploadBytes + bytes, totalBytes = existing.totalBytes + bytes)
+            // If the counter chain has nothing yet, fall back to interface totals:
+            // they are not per client, so they are logged, never written to a
+            // client row.
+            if (byMac.isEmpty()) {
+                RootShell.run("cat /proc/net/dev 2>/dev/null | grep $lanIf; true", quiet = true).out
+                    .forEach { line ->
+                        val parts = line.trim().split(Regex("\\s+"))
+                        if (parts.size >= 10) {
+                            val rx = parts[1].toLongOrNull() ?: 0L
+                            val tx = parts[9].toLongOrNull() ?: 0L
+                            AppLog.i(AppLog.TAG_NET, "usage: $lanIf rx=$rx tx=$tx (total, not per-client)")
                         }
                     }
-                }
             }
 
-            // If no iptables stats, try /proc/net/dev for total
-            if (stats.isEmpty()) {
-                devResult.out.forEach { line ->
-                    // Inter-|   Receive ... | Transmit ...
-                    //  wlan0: 12345 0 0 0 0 0 0 0 54321 0 0 0 0 0 0 0
-                    val parts = line.trim().split(Regex("\\s+"))
-                    if (parts.size >= 10) {
-                        val rx = parts[1].toLongOrNull() ?: 0L
-                        val tx = parts[9].toLongOrNull() ?: 0L
-                        AppLog.i(AppLog.TAG_NET, "usage: $lanIf rx=$rx tx=$tx (total, not per-client)")
-                    }
-                }
-            }
-
-            stats.values.toList()
+            byMac.values.toList()
         } catch (e: Throwable) {
             AppLog.w(AppLog.TAG_NET, "usage: collect failed ${e.message}")
             emptyList()
         }
     }
 
-    private fun findMacForIp(ip: String): String? {
-        return try {
-            val leases = RootShell.readLeases()
-            leases.firstOrNull { it.contains(ip) }?.let { line ->
-                val parts = line.trim().split(Regex("\\s+"))
-                if (parts.size >= 3) parts[1] else null
-            }
-        } catch (e: Throwable) {
-            null
+    /** MAC for an IP, from the lease file the caller already read. */
+    private fun macFor(ip: String, leases: List<String>): String? {
+        for (line in leases) {
+            val parts = line.trim().split(Regex("\\s+"))
+            if (parts.size >= 3 && parts[2] == ip && parts[1].length == 17) return parts[1].lowercase()
         }
+        return null
     }
 
     suspend fun updateDatabase(stats: List<UsageStats>) = withContext(Dispatchers.IO) {

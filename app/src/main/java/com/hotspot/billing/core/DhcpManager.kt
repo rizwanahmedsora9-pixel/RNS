@@ -93,20 +93,31 @@ object DhcpManager {
             }
         }
 
-        // Verify our dnsmasq is running
-        val ourRunning = try {
+        // Verify from ONE probe (setup_network.sh probe) instead of three
+        // separate commands. The probe also reports an untracked dnsmasq of ours
+        // - the leftover that held UDP/67 on 2026-09-24 and made the fresh
+        // instance die with "Address already in use".
+        val probe = RootShell.probe(lanIf, fresh = true)
+        val ourRunning = probe?.dhcpOurs ?: try {
             RootShell.isDnsmasqRunning()
         } catch (e: Throwable) {
             false
         }
-
-        val foreignAfter = try {
+        val foreignAfter = probe?.dhcpForeign ?: try {
             RootShell.isForeignDnsmasqRunning()
         } catch (e: Throwable) {
             false
         }
+        val orphan = probe?.dhcpOrphan == true
+        if (orphan) {
+            AppLog.w(
+                AppLog.TAG_NET,
+                "dhcp: an untracked dnsmasq of ours is running (leftover session) - " +
+                    "clients can get an address from a server we cannot configure"
+            )
+        }
 
-        AppLog.i(AppLog.TAG_NET, "dhcp: after start - ourRunning=$ourRunning foreignRunning=$foreignAfter")
+        AppLog.i(AppLog.TAG_NET, "dhcp: after start - ourRunning=$ourRunning foreignRunning=$foreignAfter orphan=$orphan")
 
         if (!ourRunning && foreignAfter) {
             AppLog.w(AppLog.TAG_NET, "dhcp: our dnsmasq not running but foreign is - Android took over, adopting")
@@ -131,9 +142,25 @@ object DhcpManager {
     }
 
     fun isAlive(): Boolean {
+        val probe = RootShell.probe()
+        if (probe != null) {
+            val ours = probe.dhcpOurs == true || probe.dhcpOrphan == true
+            return ours || probe.dhcpForeign == true
+        }
         val our = try { RootShell.isDnsmasqRunning() } catch (e: Throwable) { false }
         val foreign = try { RootShell.isForeignDnsmasqRunning() } catch (e: Throwable) { false }
         return our || foreign
+    }
+
+    /** Who is answering DHCP right now: "ours", "android", "none" or "unknown". */
+    fun owner(): String? {
+        val probe = RootShell.probe() ?: return null
+        return when {
+            probe.dhcpOrphan == true -> "ours-orphan"
+            probe.dhcpOurs == true -> "ours"
+            probe.dhcpForeign == true -> "android"
+            else -> "none"
+        }
     }
 
     fun restart(lanIf: String): Boolean {

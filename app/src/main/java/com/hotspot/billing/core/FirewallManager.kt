@@ -35,24 +35,22 @@ object FirewallManager {
         return true
     }
 
-    fun isAuthorized(mac: String): Boolean {
-        return try {
-            val result = RootShell.run("cat /data/local/tmp/authorized_macs.txt 2>/dev/null | grep -i $mac", quiet = true)
-            result.out.any { it.contains(mac, ignoreCase = true) }
-        } catch (e: Throwable) {
-            false
-        }
-    }
+    fun isAuthorized(mac: String): Boolean =
+        listAuthorized().any { it.startsWith(mac.lowercase() + " ") || it == mac.lowercase() }
 
     fun listAuthorized(): List<String> {
+        // One read, cached downstream callers share it through the voucher sweep
+        // and the watchdog instead of each spawning their own `cat`.
         return try {
-            RootShell.run("cat /data/local/tmp/authorized_macs.txt 2>/dev/null", quiet = true).out
+            RootShell.run("cat $AUTHORIZED_FILE 2>/dev/null; true", quiet = true).out
                 .map { it.trim() }
                 .filter { it.isNotEmpty() }
         } catch (e: Throwable) {
             emptyList()
         }
     }
+
+    private const val AUTHORIZED_FILE = "/data/local/tmp/authorized_macs.txt"
 
     fun ensureChains(): Boolean {
         AppLog.i(AppLog.TAG_NET, "fw: ensuring chains via keepalive")
@@ -61,11 +59,22 @@ object FirewallManager {
     }
 
     fun checkFirewallHealth(): Boolean {
-        val natFirst = try { RootShell.jumpIsFirst("nat", "PREROUTING", "HS_NAT") } catch (e: Throwable) { null }
-        val fwdFirst = try { RootShell.jumpIsFirst("filter", "FORWARD", "HS_FWD") } catch (e: Throwable) { null }
+        val probe = RootShell.probe()
+        val natFirst = probe?.natJump
+            ?: (try { RootShell.jumpIsFirst("nat", "PREROUTING", "HS_NAT") } catch (e: Throwable) { null })
+        val fwdFirst = probe?.forwardJump
+            ?: (try { RootShell.jumpIsFirst("filter", "FORWARD", "HS_FWD") } catch (e: Throwable) { null })
+        val redirect = probe?.portalRedirect
 
-        val healthy = (natFirst == true || natFirst == null) && (fwdFirst == true || fwdFirst == null)
-        AppLog.i(AppLog.TAG_NET, "fw: health natFirst=$natFirst fwdFirst=$fwdFirst healthy=$healthy")
+        // A missing portal redirect is as bad as a missing jump: the client has
+        // an IP and never sees the sign-in page.
+        val healthy = (natFirst == true || natFirst == null) &&
+            (fwdFirst == true || fwdFirst == null) &&
+            (redirect != false)
+        AppLog.i(
+            AppLog.TAG_NET,
+            "fw: health natFirst=$natFirst fwdFirst=$fwdFirst redirect=$redirect healthy=$healthy"
+        )
         return healthy
     }
 

@@ -14,6 +14,7 @@
     <string name="btn_detect">Detect</string>
     <string name="btn_apply">Save &amp; restart hotspot</string>
     <string name="btn_stop_all">Stop everything</string>
+    <string name="btn_exit">EXIT</string>
     <string name="btn_debugger">Open debugger</string>
     <string name="btn_copy_log">Copy log</string>
     <string name="btn_permissions">Grant WiFi-sharing permissions</string>
