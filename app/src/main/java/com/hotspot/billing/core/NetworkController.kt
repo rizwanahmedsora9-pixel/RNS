@@ -100,7 +100,9 @@ class NetworkController(
         }
 
         if (lanIf == null) {
-            val msg = "No hotspot interface appeared — ${mode.label} failed, try NetShare or Local-only, ensure Location ON"
+            val msg = "No hotspot interface appeared. WiFi and Location were switched on and " +
+                "every method in ${mode.label} was tried (see the debugger for the reason each one failed). " +
+                "The gateway retries; switching the Android hotspot on still works."
             log("network: FAILED LAN creation: $msg")
             return StartResult.Failed(msg, Step.LAN_CREATION)
         }
@@ -115,7 +117,12 @@ class NetworkController(
 
         // 4. Start DHCP (must guarantee client gets IP, gateway, DNS)
         log("network: step 4/6 starting DHCP on $lanIf")
-        val dhcpOk = DhcpManager.start(lanIf)
+        val leaveDhcp = apHandle?.leaveAndroidDhcp == true ||
+            apLauncher.shouldLeaveAndroidDhcp(lanIf)
+        if (leaveDhcp) {
+            log("network: Android owns DHCP on $lanIf - not replacing its dnsmasq")
+        }
+        val dhcpOk = DhcpManager.start(lanIf, leaveDhcp)
         if (!dhcpOk) {
             val msg = "DHCP failed to start on $lanIf — clients will stuck at Obtaining IP"
             log("network: FAILED DHCP: $msg")

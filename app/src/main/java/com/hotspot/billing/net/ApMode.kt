@@ -12,22 +12,25 @@ enum class ApMode(val key: String, val label: String, val description: String) {
 
     AUTO(
         "auto", "Automatic (recommended)",
-        "Adopt the hotspot if it is already on; otherwise try local-only hotspot, " +
-            "WiFi Direct (NetShare), then root hostapd. Falls back to waiting for the " +
-            "Android toggle only if the driver cannot do any of them."
+        "Turn WiFi and Location on, then try the system hotspot (what the Hot 8 can " +
+            "actually start), local-only hotspot, WiFi Direct, and root hostapd. " +
+            "On a WiFi uplink the system hotspot is tried last so it does not " +
+            "disconnect the internet."
     ),
 
     SYSTEM(
         "system", "Android hotspot only",
-        "Use the phone's real hotspot (ap0). On Android 12+ the app switches it on " +
-            "itself; on Android 9/10 you must flip the toggle."
+        "Use the phone's real hotspot (ap0). The app starts it as root — a normal " +
+            "app is not allowed to, which is why the Hot 8 log shows a SecurityException " +
+            "from the app uid. On a single-radio phone this disconnects a WiFi uplink."
     ),
 
     NETSHARE(
         "netshare", "NetShare - WiFi Direct AP",
-        "Creates a WiFi Direct group the phone owns (DIRECT-xx network). This is the " +
-            "technique NetShare uses: WiFi stays connected, the AP appears anyway. " +
-            "Needs Location switched on."
+        "Creates a WiFi Direct group the phone owns (DIRECT-xx network). Needs WiFi " +
+            "and Location switched on — while either is off, createGroup returns BUSY, " +
+            "which is the disabled state, not another group. If Direct still refuses, " +
+            "the system hotspot is tried so the gateway is not stuck waiting."
     ),
 
     LOCAL_ONLY(
@@ -74,6 +77,11 @@ class ApHandle(
     val ssid: String?,
     val password: String?,
     val detail: String = "",
+    /**
+     * True when Android's tether stack owns DHCP for this AP. Killing that
+     * dnsmasq makes the Hot 8 run stopSoftAp.
+     */
+    val leaveAndroidDhcp: Boolean = false,
     private val onClose: (() -> Unit)? = null
 ) {
     @Volatile private var closed = false
@@ -230,7 +238,7 @@ object ApConfigText {
 
     /** Ordered by "most likely to be the customer-facing AP". */
     val AP_NAME_PRIORITY = listOf(
-        "ap", "softap", "swlan", "wifi_ap", "uap", "wlan1", "wlan2", "p2p", "usb0", "eth0"
+        "ap", "rnsap", "softap", "swlan", "wifi_ap", "uap", "wlan1", "wlan2", "p2p", "usb0", "eth0"
     )
 
     /** True for names a WiFi-Direct group owner typically lands on. */

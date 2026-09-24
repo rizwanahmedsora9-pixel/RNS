@@ -41,6 +41,10 @@ android {
         targetSdk 34
         versionCode = resolvedVersionCode
         versionName = resolvedVersionName
+        // app_process loads only the primary dex. SoftApEntry is invoked that
+        // way (uid 0), so it must not land in classes2.dex.
+        multiDexEnabled true
+        multiDexKeepFile file('src/main/multidex-config.txt')
     }
 
     signingConfigs {
