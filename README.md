@@ -28,7 +28,8 @@ Router1 (ISP) ──> rooted Android phone  ──> Router2 ──> users
 | `scripts/bandwidth_control.sh` | **Source of truth** for per-client `tc`/HTB shaping (both directions). |
 | `scripts/netshare_ap.sh` | Root fallback AP: asks the driver for a second interface and runs `hostapd` on it — a hotspot with no toggle and no framework API. |
 | `app/…/debug/` | The recorder behind the [debugger](#debugger): ring buffer + file log, crash guard, logcat mirror, health findings (`H1`–`H10`), the full diagnostic report. |
-| `app/…/net/ApMode.kt`, `ApLauncher.kt`, `WifiShareAp.kt` | How the customer-facing WiFi network gets created: system hotspot, local-only hotspot, WiFi Direct group (NetShare-style), root `hostapd`, or manual. |
+| `app/…/net/ApLauncher.kt`, `WifiShareAp.kt` | How the customer-facing WiFi network gets created: one method only — the phone becomes a WiFi Direct **group owner** (the NetShare technique), with every attempt and framework callback logged. |
+| `app/…/net/JoinConfig.kt`, `app/…/util/Qr.kt` | The one-tap join: a fixed, deliberately non-secret passphrase (`rns-open-2026`) and the `WIFI:` QR payload / rendering that makes joining a single scan. The voucher is the real gate. |
 | `tools/run-script-selftest.sh` | Runs those scripts against stub kernel commands and asserts the resulting ruleset. |
 | `.github/workflows/` | APK build, README refresh, branch cleanup. |
 | `app/src/main/assets/*.sh` | **Generated** from `scripts/` by `:app:syncShellScripts`; git-ignored, never edited. |
@@ -48,33 +49,46 @@ workflow artifact — see [CI](#continuous-integration).
 ## Deploy
 
 1. `adb install app-release.apk` (or just open the APK on the phone), then grant the app root when Magisk prompts.
-2. Launch the app. The gateway starts as a foreground service and the **Dashboard** shows live state: root, hotspot, WAN/LAN interfaces, portal, and an event log that names every command it runs - if something fails, the reason is on that screen.
-3. **The WiFi network customers join.** Settings → *Hotspot mode* picks how it is created; the
-   phone's own WiFi stays connected the whole time, so it keeps **receiving** internet on
-   `wlan0`/`ccmni` while **sending** it out on the second interface:
+2. Launch the app. The gateway service comes up **IDLE**: it deploys its scripts, checks
+   root and shows the status — it does not create the network. The **Dashboard** shows
+   live state: root, AP, WAN/LAN interfaces, portal, a status badge and an event log that
+   names every command it runs — if something fails, the reason is on that screen.
+3. **Start / Stop is one button.** The dashboard's single button is the whole control
+   surface, with a badge next to it that says exactly where things stand:
 
-   | Mode | What it does | Needs the Android hotspot toggle? |
+   | State | Button | Badge |
    | --- | --- | --- |
-   | **Automatic** (default) | Turns WiFi on, then tries the method this radio can actually start. Mobile uplink (the Hot 8): system hotspot first, then local-only, WiFi Direct, root hostapd. WiFi uplink: system hotspot last, so it does not disconnect the internet. | no |
-   | **NetShare (WiFi Direct)** | The phone becomes a WiFi Direct **group owner**. Needs WiFi and Location on — while either is off, `createGroup` returns BUSY, which means Direct is disabled, not that another group exists. If Direct still refuses, the system hotspot is tried. | no |
-   | **Local-only hotspot** | `WifiManager.startLocalOnlyHotspot()` — an AP the app may create on its own (Android picks the SSID/password; the app reads them back and shows them). | no |
-   | **Root hostapd** | `scripts/netshare_ap.sh`: ask the driver for a second interface and run a CLI `hostapd`. The Hot 8 only has the WiFi HAL binary, which is not that program, so this mode falls through to the system hotspot. | no |
-   | **System hotspot** | The real Android hotspot (`ap0`). Started as root via `startSoftAp` — a normal app is not allowed to call it. Android's own dnsmasq is left running; killing it makes the Hot 8 tear the AP down. | no |
-   | **Manual** | Create nothing; wait for an interface to appear and take it over. | yes |
+   | Idle / Stopped | **Start** (enabled) | `OFF` (grey) |
+   | Starting | "Running" (disabled) | `STARTING… N/6` (yellow) — the six steps: WAN → AP → address → DHCP → DNS → NAT |
+   | Running | **Running** (enabled, tap = stop) | `ONLINE — <SSID>, N clients` (green) |
+   | Stopping | "Stopped" (disabled) | `OFF` (grey) — the button reverts to *Start* the instant teardown confirms complete |
+   | Failed | **Start** (enabled — the retry) | `FAILED — <reason>` (red) |
 
-   On Android 9 (the Infinix Hot 8, X650C) Automatic does **not** wait for the toggle.
-   `cmd wifi start-softap` does not exist on that build; the app calls the same
-   `startSoftAp` the Settings app calls, as root. It also turns WiFi and Location
-   services on first — WiFi Direct returns BUSY and local-only hotspot is refused
-   while either is off, and a missing Location *permission* throws
-   `SecurityException` instead of a callback. Granting the permission retries
-   immediately. The gateway retries every 20 s and takes over the instant an
-   interface appears, so flipping the system toggle later still works.
-4. When the hotspot comes up the app **keeps the address Android already assigned** (usually `192.168.43.1`). Replacing that with `10.66.0.1` is what left phones spinning on "Obtaining IP address". DHCP offers are sent as broadcasts, because MediaTek radios drop the unicast offer and the client never finishes DHCP. If Android's own DHCP server comes back and the two would fight, the app steps aside and lets the phone hand out addresses — the sign-in page still appears either way. After installing this update, tell users to **forget the Wi-Fi network and join again once**.
-5. **Vouchers** tab: pick a preset (1 Hour / 3 Hours / 1 Day / 7 Days) or fill in plan name, duration and speeds, then *Generate*. Codes are copyable/shareable straight from the dialog; the list filters by status and each row can be expired or deleted.
-6. **Users** tab: everyone currently on the LAN (online *with* a voucher vs *waiting at the portal*), saved user profiles - a name/phone/note per device MAC, recorded automatically the first time a device is seen - and session history.
-7. **Settings** tab: hotspot mode (see above), SSID/password, WAN/LAN interface pins (blank = automatic), a *Detect* button that fills in what the phone currently has, and *Permissions* / *Debugger* shortcuts.
-8. Check the raw state any time with `su -c 'sh /data/local/tmp/setup_network.sh status'` — or `… diag` for the full dump the debugger's **Full report** is built from.
+   A stopped gateway **stays stopped across a reboot**: the user's last Start/Stop
+   decision is persisted, and the boot receiver only auto-starts when the last action
+   was a Start. If a start fails only because the Location permission is not granted
+   yet, the app asks for it automatically and retries the moment the grant confirms —
+   a dispatched request never starts the gateway on its own.
+4. **The WiFi network customers join.** One method, no mode picker: the phone becomes a
+   WiFi Direct **group owner** (the NetShare technique) — a real AP legacy clients can
+   join — while the phone's own WiFi stays connected the whole time, so it keeps
+   **receiving** internet on `wlan0`/`ccmni` while **sending** it out on the group's
+   interface. Before every `createGroup` attempt the P2P state is confirmed clean
+   (any leftover group is removed and its absence verified — a leftover group is what
+   answered `BUSY` on *every* attempt on the Hot 8), and the app turns WiFi and Location
+   services on first: while either is off the framework refuses with a generic error
+   that looks like a conflict but isn't one.
+   The SSID is requested as `DIRECT-<your name>`; the **passphrase is fixed by the app
+   (`rns-open-2026`) and is deliberately not secret** — the network can never be
+   literally open on WiFi Direct (WPA is mandatory), but a known passphrase makes
+   joining a single tap. The dashboard shows a **join card** with SSID, passphrase and
+   a scannable QR, and the portal's login page carries the same card, so the customer
+   never types a password: the **voucher is the real gate**.
+5. When the hotspot comes up the app **keeps the address Android already assigned** (usually `192.168.43.1`). Replacing that with `10.66.0.1` is what left phones spinning on "Obtaining IP address". DHCP offers are sent as broadcasts, because MediaTek radios drop the unicast offer and the client never finishes DHCP. If a foreign DHCP server (e.g. Android's own tether dnsmasq) is holding the ports, the app **kills it and retries with a growing pause** (1 s, 2 s, then falls back to a DNS-only server so the portal keeps resolving) instead of silently ending up with no DHCP. After installing this update, tell users to **forget the Wi-Fi network and join again once**.
+6. **Vouchers** tab: pick a preset (1 Hour / 3 Hours / 1 Day / 7 Days) or fill in plan name, duration and speeds, then *Generate*. Codes are copyable/shareable straight from the dialog; the list filters by status and each row can be expired or deleted.
+7. **Users** tab: everyone currently on the LAN (online *with* a voucher vs *waiting at the portal*), saved user profiles - a name/phone/note per device MAC, recorded automatically the first time a device is seen - and session history.
+8. **Settings** tab: the SSID (it becomes the `DIRECT-…` network name), WAN/LAN interface pins (blank = automatic), a *Detect* button that fills in what the phone currently has, and *Permissions* / *Debugger* shortcuts.
+9. Check the raw state any time with `su -c 'sh /data/local/tmp/setup_network.sh status'` — or `… diag` for the full dump the debugger's **Full report** is built from.
 
 ### Updating the app
 
@@ -122,7 +136,7 @@ What it records, continuously and in order:
 | Source | What you see |
 | --- | --- |
 | Every root command | `$ iptables -t nat -S …` → `exit 0, 43ms`, plus stdout/stderr. A rule that was *not* applied is visible instead of silent. |
-| AP bring-up | Which mode, which method was tried, what the framework answered (`onFailed reason=3` decoded into words), which interface appeared, which address was adopted, the SSID/password customers must join. |
+| AP bring-up | The one method (WiFi Direct group owner), every `createGroup` attempt, what the framework answered (`onFailed reason=2` = BUSY decoded into words, including the leftover-group diagnosis), the removeGroup + clean-state confirmations, which interface appeared, which address was adopted, the SSID/password customers join. |
 | Watchdog | Findings with stable codes **H1**–**H10**: `H1` AP interface gone, `H2` address moved, `H3` no DHCP server ("Obtaining IP address"), `H4` IP forwarding off, `H5` portal dead, `H6` our iptables jump no longer first, `H7` phone has no internet side, `H8` policy-routing rule missing, `H9` clients but no voucher yet, `H10` portal probe not HTTP 200. Each one is logged when it appears, again when it recovers, and carries the fix. |
 | The system's own log | A logcat mirror of `wpa_supplicant`, `hostapd`, `Tethering`, `IpServer`, `WifiP2pService`, `netd`, `dnsmasq` — off / WiFi tags / everything. With root it is the full log; without, this app's lines. |
 | Crashes | Any uncaught exception or failed coroutine is written to `files/logs/last_crash.txt` **together with the 120 records before it**, and reported on the next start. |
@@ -160,17 +174,21 @@ Requests, or just let the prune job do the work.
 Working: voucher generation and management from the admin UI, voucher redemption,
 single-device binding, static IP assignment, per-plan shaping in both directions,
 captive-portal probes for Android/iOS/Windows, foreground service that survives the
-app being swiped away, auto-restart after reboot, expiry sweep, user profiles
-auto-recorded per device MAC, a watchdog that reports and repairs drift (findings
+app being swiped away, an **IDLE launch** (the service deploys and checks, never
+auto-starts), a **single Start/Stop button with a live status badge**, a gateway that
+**stays stopped across a reboot** when the user stopped it, a permission gate that
+only reacts to a *confirmed* grant, a watchdog that reports and repairs drift (findings
 `H1`–`H10`), and a [debugger](#debugger) that records every command, callback and
 finding as copyable text.
 
-Hotspot bring-up: no toggle needed — local-only hotspot, WiFi Direct group owner
-(NetShare-style) or root `hostapd` create the network while the phone's own WiFi stays
-connected; on Android 12+ the real system hotspot is tried first, and on Android 9/10 the
-system toggle still works and is adopted within ~2 seconds whenever it appears. What a
-given radio supports is a hardware question: the debugger names the exact framework error
-when a method is refused (see [AUDIT.md O6](AUDIT.md#7-still-open)).
+Hotspot bring-up: one method, no toggle — the phone becomes a WiFi Direct **group
+owner** (the NetShare technique), created only on the user's Start tap, with the P2P
+state confirmed clean before every attempt. The phone's own WiFi stays connected, so it
+keeps receiving internet while sending it out. Joining is one tap: a fixed, openly
+displayed passphrase (`rns-open-2026`) plus the QR on the dashboard and the portal login
+page — the voucher is the real gate. What a given radio supports is a hardware question:
+the debugger names the exact framework error when the group is refused
+(see [AUDIT.md O6](AUDIT.md#7-still-open)).
 
 Not built yet — see [AUDIT.md §7](AUDIT.md#7-still-open). The important remaining ones:
 no per-session byte accounting, portal traffic is plaintext HTTP on the LAN, and no

@@ -139,7 +139,14 @@ case "$*" in
   "route show default") echo "default via 192.168.1.1 dev ccmni0 metric 1" ;;
   "-o link show up")    printf '1: lo: <LOOPBACK,UP> mtu 65536\n3: ccmni0: <NOARP,UP,LOWER_UP> mtu 1500\n10: ap0: <BROADCAST,MULTICAST,UP> mtu 1500\n' ;;
   "link show ap0")      echo "10: ap0: <BROADCAST,MULTICAST,UP> mtu 1500" ;;
-  "-o link show")       printf '1: lo: <LOOPBACK,UP> mtu 65536\n3: ccmni0: <NOARP,UP,LOWER_UP> mtu 1500\n10: ap0: <BROADCAST,MULTICAST,UP> mtu 1500\n' ;;
+  "-o link show")
+        printf '1: lo: <LOOPBACK,UP> mtu 65536\n3: ccmni0: <NOARP,UP,LOWER_UP> mtu 1500\n10: ap0: <BROADCAST,MULTICAST,UP> mtu 1500\n'
+        if [ -n "${STUB_STALE_RNSAP:-}" ]; then printf '11: rnsap0: <BROADCAST,MULTICAST> mtu 1500 state DOWN\n'; fi
+        ;;
+  "link show rnsap0")
+        if [ -n "${STUB_STALE_RNSAP:-}" ]; then echo "11: rnsap0: <BROADCAST,MULTICAST> mtu 1500 state DOWN"; fi
+        ;;
+  "link set rnsap0 down"|"link del rnsap0") exit 0 ;;
   "-o -4 addr show dev ap0")
         # Empty by default so start() assigns 10.66.0.1. The adoption scenario
         # exports STUB_LAN_ADDR with a full `ip -o -4 addr` line.
@@ -241,6 +248,13 @@ for a in "$@"; do
     esac
 done
 [ -n "$pidfile" ] || { echo "stub: no --pid-file" >&2; exit 1; }
+# Simulate a foreign dnsmasq holding the ports: the real failure reads
+# "Address already in use" in the log. The script must kill the foreign one
+# and retry with backoff before giving up.
+if [ -n "${STUB_EAIUSE:-}" ] && [ -n "$has_range" ]; then
+    echo "dnsmasq: failed to create listening socket for port 67: Address already in use" >&2
+    exit 1
+fi
 # Simulate the system's own DHCP server holding UDP/67 (Android 10+ serves WiFi
 # Direct / local-only hotspots from system_server). Only DHCP mode fails; a
 # DNS-only dnsmasq must still start.
@@ -522,6 +536,35 @@ else
     fail "the DNS-only dnsmasq is not bound to the gateway address"
 fi
 
+section "Address already in use: kill the foreign dnsmasq and back off"
+# A foreign dnsmasq holding 53/67 is what made our dnsmasq log
+# "Address already in use". The script must retry (with a growing pause)
+# instead of falling through after one shot, and give up after the configured
+# rounds so a start cannot hang.
+: > "$LOG"
+STUB_EAIUSE=1 $SETUP start > "$WORK/out.eaiuse" 2>&1 || { fail "EAIUSE start exited non-zero"; cat "$WORK/out.eaiuse"; }
+EAI_DNSMASQ=$(grep -cE "^dnsmasq .*--dhcp-range=" "$LOG" || true)
+if [ "$EAI_DNSMASQ" = "3" ]; then
+    pass "our dnsmasq was attempted 3 times (once per backoff round), not 1"
+else
+    fail "expected 3 DHCP dnsmasq attempts, got $EAI_DNSMASQ"
+fi
+if grep -q "backing off 1s" "$WORK/out.eaiuse" && grep -q "backing off 2s" "$WORK/out.eaiuse"; then
+    pass "the pauses grow between rounds (1s, 2s)"
+else
+    fail "no backoff in the output: $(grep -i backoff "$WORK/out.eaiuse" || echo '(nothing)')"
+fi
+if grep -q "after 3 round" "$WORK/out.eaiuse"; then
+    pass "it gives up after the configured rounds"
+else
+    fail "no give-up after 3 rounds: $(tail -n 5 "$WORK/out.eaiuse")"
+fi
+if grep -q '^DHCP_OWNER=ours-dns$' "$STATE/hotspot.runtime"; then
+    pass "it still leaves a working DNS-only server, so the portal keeps resolving"
+else
+    fail "expected the DNS-only fallback, got: $(cat "$STATE/hotspot.runtime" 2>/dev/null)"
+fi
+
 section "netshare_ap.sh: root hostapd, no hotspot toggle"
 : > "$LOG"
 $NETSHARE start "RNS-Test" "password123" > "$WORK/out.netshare" 2>&1 \
@@ -579,6 +622,24 @@ if [ ! -f "$STATE/netshare_hostapd.pid" ] && [ ! -f "$STATE/netshare.runtime" ];
 else
     fail "stop left state behind"
 fi
+
+section "netshare_ap.sh: a crashed session's stale rnsap0 is removed before start"
+# `stop` only deletes an interface when the current run's ownership file says it
+# created it - so after a crash rnsap0 survives. start() must remove it
+# unconditionally: only this app ever creates an interface with that name.
+# (The stop above left no pidfile/runtime - this IS the crash case: the
+#  process is gone but the interface lives on.)
+: > "$LOG"
+STUB_STALE_RNSAP=1 $NETSHARE start "RNS-Stale" "password123" > "$WORK/out.stale" 2>&1 \
+    || { fail "stale-rnsap start exited non-zero"; cat "$WORK/out.stale"; }
+check "the stale rnsap0 is removed unconditionally" 1 "iw dev rnsap0 del"
+if grep -q "stale rnsap0 from a crashed session" "$WORK/out.stale"; then
+    pass "the log names the stale interface it cleaned up"
+else
+    fail "no stale-interface message: $(grep -i stale "$WORK/out.stale" || echo '(nothing)')"
+fi
+# Leave no live hostapd for the scenarios after this one.
+$NETSHARE stop > /dev/null 2>&1
 
 section "foreign-dhcp / procs report cleanly"
 : > "$LOG"

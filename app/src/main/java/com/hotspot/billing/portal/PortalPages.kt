@@ -27,7 +27,27 @@ object PortalPages {
             path.contains("/redirect")
     }
 
-    fun loginHtml(): String = """
+    /**
+     * The sign-in page. When [ssid]/[pass] are known they are shown together
+     * with the one-tap join QR - the passphrase is a fixed, non-secret
+     * technicality, the voucher is the real gate. [qrBase64] is a PNG data
+     * URI; when it is null the credentials are still shown as text.
+     */
+    fun loginHtml(ssid: String? = null, pass: String? = null, qrBase64: String? = null): String {
+        val joinCard = if (ssid != null && pass != null) {
+            val qr = if (qrBase64 != null) """
+        <img src="data:image/png;base64,$qrBase64" width="150" height="150"
+             style="background:#fff;padding:6px;border-radius:8px;margin-top:10px">"""
+            else ""
+            """
+        <div style="margin-top:24px;padding:14px;border:1px solid #333;border-radius:10px;max-width:340px;margin-left:auto;margin-right:auto">
+            <p style="margin:0 0 6px 0;font-size:13px;color:#9ab">No WiFi yet? Join this network:</p>
+            <p style="margin:0;font-size:15px"><b>${escapeHtml(ssid)}</b></p>
+            <p style="margin:2px 0 0 0;font-size:13px;color:#9ab">password: <code>${escapeHtml(pass)}</code></p>
+            $qr
+        </div>"""
+        } else ""
+        return """
         <!DOCTYPE html>
         <html><head>
         <meta charset="utf-8">
@@ -45,8 +65,10 @@ object PortalPages {
             <input type="text" name="voucher" placeholder="XXXX-XXXX" autocapitalize="characters" autocomplete="off" required>
             <br><button type="submit">Connect</button>
         </form>
+        $joinCard
         </body></html>
     """.trimIndent()
+    }
 
     /**
      * After the voucher is accepted the client's MAC skips the redirect, so this

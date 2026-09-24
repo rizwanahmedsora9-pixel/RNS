@@ -124,6 +124,9 @@ dependencies {
     // Local embedded HTTP server for the captive portal
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
 
+    // QR rendering for the one-tap join code (pure JVM core, no Android deps)
+    implementation 'com.google.zxing:core:3.5.2'
+
     // Room (local DB for vouchers/sessions)
     implementation 'androidx.room:room-runtime:2.6.1'
     implementation 'androidx.room:room-ktx:2.6.1'

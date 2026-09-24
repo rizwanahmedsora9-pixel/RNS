@@ -73,6 +73,10 @@ DHCP_LEASE="${DHCP_LEASE:-10m}"
 UPSTREAM_DNS="${UPSTREAM_DNS:-8.8.8.8}"
 UPSTREAM_DNS2="${UPSTREAM_DNS2:-1.1.1.1}"
 DHCP_OWNER="${DHCP_OWNER:-ours}"
+# How many times to try our dnsmasq when the ports are still held (Address
+# already in use), doubling the pause between rounds: 1s, 2s, then give up and
+# fall back to Android's own DHCP server.
+DHCP_MAX_ROUNDS="${DHCP_MAX_ROUNDS:-3}"
 
 # --- captive portal ----------------------------------------------------------
 PORTAL_PORT="${PORTAL_PORT:-8080}"
@@ -605,6 +609,39 @@ start_dnsmasq_dns_only() {
     return 1
 }
 
+# One pass down the option ladder (full -> without option 114 -> minimal).
+# Returns: 0 = our dnsmasq is up, 1 = the options were rejected (retrying the
+# same ladder is pointless), 2 = the ports are still held by somebody else
+# ("Address already in use") - the caller kills the foreign dnsmasq and backs
+# off before the next round.
+dnsmasq_ladder_once() {
+    IF="$1"
+    if run_dnsmasq full "$IF"; then
+        log "dnsmasq started"
+        return 0
+    fi
+    case "$(tail -n 2 "$LOGFILE" 2>/dev/null)" in
+        *"Address already in use"*) return 2 ;;
+    esac
+    log "dnsmasq rejected the full option set ($(tail -n 1 "$LOGFILE" 2>/dev/null)); retrying without option 114"
+    if run_dnsmasq basic "$IF"; then
+        log "dnsmasq started (without captive-portal DHCP option)"
+        return 0
+    fi
+    case "$(tail -n 2 "$LOGFILE" 2>/dev/null)" in
+        *"Address already in use"*) return 2 ;;
+    esac
+    log "dnsmasq rejected the basic option set ($(tail -n 1 "$LOGFILE" 2>/dev/null)); retrying minimal"
+    if run_dnsmasq_min "$IF"; then
+        log "dnsmasq started (minimal options)"
+        return 0
+    fi
+    case "$(tail -n 2 "$LOGFILE" 2>/dev/null)" in
+        *"Address already in use"*) return 2 ;;
+    esac
+    return 1
+}
+
 start_dnsmasq() {
     IF="$1"
     if P=$(dnsmasq_pid); then
@@ -619,25 +656,33 @@ start_dnsmasq() {
     fi
     mkdir -p "$STATE_DIR"
     migrate_hosts
-    kill_foreign_dnsmasq
-    log "starting dnsmasq on $IF ($DHCP_START-$DHCP_END, broadcast replies)"
-    if run_dnsmasq full "$IF"; then
-        log "dnsmasq started"
-        return 0
-    fi
-    log "dnsmasq rejected the full option set ($(tail -n 1 "$LOGFILE" 2>/dev/null)); retrying without option 114"
-    kill_foreign_dnsmasq
-    if run_dnsmasq basic "$IF"; then
-        log "dnsmasq started (without captive-portal DHCP option)"
-        return 0
-    fi
-    log "dnsmasq rejected the basic option set ($(tail -n 1 "$LOGFILE" 2>/dev/null)); retrying minimal"
-    kill_foreign_dnsmasq
-    if run_dnsmasq_min "$IF"; then
-        log "dnsmasq started (minimal options)"
-        return 0
-    fi
-    log "ERROR: dnsmasq failed to start ($(tail -n 1 "$LOGFILE" 2>/dev/null))"
+
+    # Android's own tethering dnsmasq serves the SAME interface. Two DHCP
+    # servers NAK each other, and a listener still holding 53/67 is what our
+    # dnsmasq logs as "Address already in use". So: kill the foreign dnsmasq
+    # before EVERY attempt, and when the ports are still held, back off
+    # (1s, 2s, ...) and try again instead of falling through to a no-DHCP
+    # state.
+    ROUND=1
+    BACKOFF=1
+    while [ "$ROUND" -le "$DHCP_MAX_ROUNDS" ]; do
+        kill_foreign_dnsmasq
+        log "starting dnsmasq on $IF ($DHCP_START-$DHCP_END, broadcast replies) - round $ROUND/$DHCP_MAX_ROUNDS"
+        dnsmasq_ladder_once "$IF"
+        RC=$?
+        if [ "$RC" = 0 ]; then
+            return 0
+        fi
+        if [ "$RC" = 2 ] && [ "$ROUND" -lt "$DHCP_MAX_ROUNDS" ]; then
+            log "port 53/67 still held (Address already in use) - killing the foreign dnsmasq again and backing off ${BACKOFF}s"
+            sleep "$BACKOFF"
+            BACKOFF=$((BACKOFF * 2))
+            ROUND=$((ROUND + 1))
+            continue
+        fi
+        break
+    done
+    log "ERROR: dnsmasq failed to start after $ROUND round(s) ($(tail -n 1 "$LOGFILE" 2>/dev/null))"
     return 1
 }
 

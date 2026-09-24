@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -16,8 +17,8 @@ import android.text.InputType
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.RadioGroup
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -32,7 +33,7 @@ import com.hotspot.billing.db.VoucherStatus
 import com.hotspot.billing.debug.AppLog
 import com.hotspot.billing.debug.DebugExport
 import com.hotspot.billing.debug.LogFormat
-import com.hotspot.billing.net.ApMode
+import com.hotspot.billing.net.JoinConfig
 import com.hotspot.billing.net.LeaseParser
 import com.hotspot.billing.net.SoftApController
 import com.hotspot.billing.net.VoucherManager
@@ -41,6 +42,7 @@ import com.hotspot.billing.ui.ClientRow
 import com.hotspot.billing.ui.ProfileAdapter
 import com.hotspot.billing.ui.SessionAdapter
 import com.hotspot.billing.ui.VoucherAdapter
+import com.hotspot.billing.util.Qr
 import com.hotspot.billing.util.RootShell
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -50,8 +52,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * The admin console: dashboard (state + event log), voucher minting/management,
- * connected users + saved device profiles + session history, and settings.
+ * The admin console: dashboard (status badge + the single Start/Stop button +
+ * event log), voucher minting/management, connected users + saved device
+ * profiles + session history, and settings.
+ *
+ * The dashboard button is the **single control surface**:
+ *   IDLE/STOPPED/ERROR  -> "Start" (enabled)
+ *   STARTING            -> "Running" (disabled - transition)
+ *   RUNNING             -> "Running" (enabled, tap = stop)
+ *   STOPPING            -> "Stopped" (disabled - transition)
+ * and the badge next to it says exactly where things stand:
+ *   OFF (grey) / STARTING… step N/6 (yellow) / ONLINE — SSID, N clients (green)
+ *   / FAILED — reason (red).
+ *
  * All gateway work happens in [HotspotService]; this activity only renders and
  * issues commands to it.
  */
@@ -69,6 +82,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sections: List<View>
 
     // Dashboard
+    private lateinit var btnToggle: Button
+    private lateinit var dashStatusBadge: TextView
     private lateinit var dashRoot: TextView
     private lateinit var dashAp: TextView
     private lateinit var dashWan: TextView
@@ -79,8 +94,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var dashHint: TextView
     private lateinit var dashLog: TextView
     private lateinit var dashApKind: TextView
-    private lateinit var dashApSsid: TextView
     private lateinit var dashFindings: TextView
+    private lateinit var dashJoinSsid: TextView
+    private lateinit var dashJoinPass: TextView
+    private lateinit var dashJoinQr: ImageView
 
     // Vouchers tab
     private lateinit var etPlan: EditText
@@ -92,12 +109,9 @@ class MainActivity : AppCompatActivity() {
 
     // Settings tab
     private lateinit var etSsid: EditText
-    private lateinit var etPass: EditText
     private lateinit var etWan: EditText
     private lateinit var etLan: EditText
     private lateinit var setEnv: TextView
-    private lateinit var apModeGroup: RadioGroup
-    private val modeButtons = LinkedHashMap<ApMode, Int>()
 
     private lateinit var voucherAdapter: VoucherAdapter
     private lateinit var clientAdapter: ClientAdapter
@@ -110,6 +124,14 @@ class MainActivity : AppCompatActivity() {
     private var leases: List<LeaseParser.Lease> = emptyList()
     private var envText = ""
     private var voucherFilter: VoucherStatus? = null
+
+    // One-tap join card: the QR is rendered once per SSID.
+    private var qrForSsid: String? = null
+    private var joinCardVisible = false
+
+    // Ask for the Location permission automatically, but only once per
+    // failed-start window (not every 1.5s poll).
+    private var permissionPromptShown = false
 
     private val handler = Handler(Looper.getMainLooper())
     private var pollCount = 0
@@ -127,10 +149,12 @@ class MainActivity : AppCompatActivity() {
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             svc = (service as? HotspotService.LocalBinder)?.service()
+            bound = true
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             svc = null
+            bound = false
         }
     }
 
@@ -149,10 +173,10 @@ class MainActivity : AppCompatActivity() {
         requestNotificationPermissionIfNeeded()
         if (!hasWifiSharePermissions()) requestWifiSharePermissions()
 
-        // The gateway starts with the app and survives it being swiped away.
-        startForegroundService(
-            Intent(this, HotspotService::class.java).setAction(HotspotService.ACTION_START)
-        )
+        // The gateway does NOT start with the app: the service comes up IDLE
+        // (scripts deployed, root checked, status shown) and only the user's
+        // Start tap brings the network up.
+        startForegroundService(Intent(this, HotspotService::class.java))
         bindService(Intent(this, HotspotService::class.java), connection, Context.BIND_AUTO_CREATE)
 
         handler.post(poller)
@@ -204,6 +228,8 @@ class MainActivity : AppCompatActivity() {
     // ---------------------------------------------------------------- dashboard
 
     private fun wireDashboard() {
+        btnToggle = findViewById(R.id.btn_toggle)
+        dashStatusBadge = findViewById(R.id.dash_status_badge)
         dashRoot = findViewById(R.id.dash_root)
         dashAp = findViewById(R.id.dash_ap)
         dashWan = findViewById(R.id.dash_wan)
@@ -214,18 +240,44 @@ class MainActivity : AppCompatActivity() {
         dashHint = findViewById(R.id.dash_hint)
         dashLog = findViewById(R.id.dash_log)
         dashApKind = findViewById(R.id.dash_ap_kind)
-        dashApSsid = findViewById(R.id.dash_ap_ssid)
         dashFindings = findViewById(R.id.dash_findings)
+        dashJoinSsid = findViewById(R.id.dash_join_ssid)
+        dashJoinPass = findViewById(R.id.dash_join_pass)
+        dashJoinQr = findViewById(R.id.dash_join_qr)
 
-        findViewById<Button>(R.id.btn_start).setOnClickListener {
-            withService { it.startSequence() }
-        }
-        findViewById<Button>(R.id.btn_stop).setOnClickListener {
-            withService { it.stopSequence() }
+        // The single control surface. Idle/stopped/failed -> Start; running ->
+        // Stop. STARTING/STOPPING are transition windows in which the button is
+        // disabled, so a second tap cannot race the state machine.
+        btnToggle.setOnClickListener {
+            val phase = svc?.state?.phase
+            when (phase) {
+                HotspotService.Phase.IDLE,
+                HotspotService.Phase.STOPPED,
+                HotspotService.Phase.ERROR -> {
+                    if (phase == HotspotService.Phase.ERROR &&
+                        svc?.state?.needsLocationPermission == true &&
+                        !hasWifiSharePermissions()
+                    ) {
+                        requestWifiSharePermissions()
+                        return@setOnClickListener
+                    }
+                    startServiceAction(HotspotService.ACTION_START)
+                }
+                HotspotService.Phase.RUNNING -> startServiceAction(HotspotService.ACTION_STOP)
+                else -> { /* disabled during STARTING/STOPPING */ }
+            }
         }
         findViewById<Button>(R.id.btn_open_tether).setOnClickListener { openTetherSettings() }
         findViewById<Button>(R.id.btn_debugger).setOnClickListener { openDebugger() }
         findViewById<Button>(R.id.btn_copy_log).setOnClickListener { copyWholeLog() }
+    }
+
+    private fun startServiceAction(action: String) {
+        try {
+            startForegroundService(Intent(this, HotspotService::class.java).setAction(action))
+        } catch (e: Throwable) {
+            toast("Could not signal the service (${e.message})")
+        }
     }
 
     private fun openDebugger() {
@@ -240,9 +292,9 @@ class MainActivity : AppCompatActivity() {
                 buildString {
                     append("=== RNS hotspot gateway - event log ===\n")
                     append("exported : ").append(LogFormat.timestamp(System.currentTimeMillis())).append('\n')
-                    append("device   : ").append(android.os.Build.MANUFACTURER).append(' ')
-                        .append(android.os.Build.MODEL).append(" / Android ")
-                        .append(android.os.Build.VERSION.RELEASE).append('\n')
+                    append("device   : ").append(Build.MANUFACTURER).append(' ')
+                        .append(Build.MODEL).append(" / Android ")
+                        .append(Build.VERSION.RELEASE).append('\n')
                     svc?.snapshot()?.let { snap ->
                         append("phase    : ").append(snap.phase).append('\n')
                         append("ap       : ").append(snap.apKind ?: "-")
@@ -266,6 +318,10 @@ class MainActivity : AppCompatActivity() {
     private fun renderDashboard() {
         val state = svc?.state
         if (state == null) {
+            btnToggle.isEnabled = false
+            btnToggle.text = getString(R.string.btn_start)
+            dashStatusBadge.text = getString(R.string.badge_off)
+            dashStatusBadge.setTextColor(ContextCompat.getColor(this, R.color.textDim))
             dashRoot.text = "..."
             dashAp.text = "service starting..."
             return
@@ -278,19 +334,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         dashAp.text = when (state.phase) {
+            HotspotService.Phase.IDLE -> "idle"
             HotspotService.Phase.STARTING -> "starting..."
-            HotspotService.Phase.WAITING_AP -> "OFF - switch it on (see below)"
             HotspotService.Phase.RUNNING -> "running"
+            HotspotService.Phase.STOPPING -> "stopping..."
             HotspotService.Phase.STOPPED -> "stopped"
-            HotspotService.Phase.ERROR -> "error"
+            HotspotService.Phase.ERROR -> "failed"
         }
 
-        dashApKind.text = state.apKind ?: (state.apMode?.let { "waiting ($it)" } ?: "-")
-        dashApSsid.text = when {
-            state.apSsid == null -> "-"
-            state.apPassword == null -> state.apSsid ?: "-"
-            else -> "${state.apSsid} / ${state.apPassword}"
-        }
+        dashApKind.text = state.apKind ?: state.apMode?.let { "waiting ($it)" } ?: "-"
         dashFindings.text = when {
             state.findings.isEmpty() -> if (state.lastHealthCheck == null) "not checked yet" else "healthy"
             else -> state.findings.joinToString(" · ") { it.code }
@@ -318,7 +370,96 @@ class MainActivity : AppCompatActivity() {
 
         dashLog.text = svc?.dumpLog()?.joinToString("\n")?.ifBlank { "(no events yet)" }
             ?: "(no events yet)"
+
+        renderToggleButton(state)
+        renderStatusBadge(state)
+        renderJoinCard(state)
     }
+
+    /** The button is the single control surface (see class docs). */
+    private fun renderToggleButton(state: HotspotService.GatewayState) {
+        when (state.phase) {
+            HotspotService.Phase.IDLE,
+            HotspotService.Phase.STOPPED,
+            HotspotService.Phase.ERROR -> {
+                btnToggle.text = getString(R.string.btn_start)
+                btnToggle.isEnabled = true
+                btnToggle.backgroundTintList =
+                    ContextCompat.getColorStateList(this, R.color.green)
+            }
+            HotspotService.Phase.STARTING -> {
+                btnToggle.text = getString(R.string.btn_running)
+                btnToggle.isEnabled = false
+                btnToggle.backgroundTintList =
+                    ContextCompat.getColorStateList(this, R.color.accentDark)
+            }
+            HotspotService.Phase.RUNNING -> {
+                btnToggle.text = getString(R.string.btn_running)
+                btnToggle.isEnabled = true
+                btnToggle.backgroundTintList =
+                    ContextCompat.getColorStateList(this, R.color.accent)
+            }
+            HotspotService.Phase.STOPPING -> {
+                btnToggle.text = getString(R.string.btn_stopped)
+                btnToggle.isEnabled = false
+                btnToggle.backgroundTintList =
+                    ContextCompat.getColorStateList(this, R.color.chip)
+            }
+        }
+    }
+
+    /**
+     * OFF (grey) / STARTING… step N/6 (yellow) / ONLINE — SSID, N clients
+     * (green) / FAILED — reason (red).
+     */
+    private fun renderStatusBadge(state: HotspotService.GatewayState) {
+        val (text, colorRes) = when (state.phase) {
+            HotspotService.Phase.IDLE,
+            HotspotService.Phase.STOPPED,
+            HotspotService.Phase.STOPPING -> getString(R.string.badge_off) to R.color.textDim
+            HotspotService.Phase.STARTING ->
+                "STARTING… ${state.startStep}/6" to R.color.amber
+            HotspotService.Phase.RUNNING ->
+                "ONLINE — ${state.apSsid ?: "?"}, ${state.onlineClients} clients" to R.color.green
+            HotspotService.Phase.ERROR ->
+                "FAILED — ${truncate(state.message.ifBlank { "unknown reason" }, 80)}" to R.color.red
+        }
+        dashStatusBadge.text = text
+        dashStatusBadge.setTextColor(ContextCompat.getColor(this, colorRes))
+    }
+
+    /** The one-tap join card: SSID, fixed passphrase, QR. */
+    private fun renderJoinCard(state: HotspotService.GatewayState) {
+        val ssid = state.apSsid
+        if (ssid == null) {
+            if (joinCardVisible) {
+                dashJoinQr.visibility = View.GONE
+                dashJoinQr.setImageBitmap(null)
+                dashJoinSsid.text = "-"
+                dashJoinPass.text = "-"
+                joinCardVisible = false
+            }
+            return
+        }
+        dashJoinSsid.text = ssid
+        dashJoinPass.text = state.apPassword ?: JoinConfig.FIXED_PASSPHRASE
+        if (!joinCardVisible) {
+            joinCardVisible = true
+            dashJoinQr.visibility = View.VISIBLE
+        }
+        if (qrForSsid != ssid) {
+            qrForSsid = ssid
+            val payload = JoinConfig.wifiQrPayload(ssid)
+            val sizePx = (112 * resources.displayMetrics.density).toInt()
+            scope.launch {
+                val bmp: Bitmap? = withContext(Dispatchers.IO) { Qr.bitmap(payload, sizePx) }
+                if (qrForSsid == ssid) dashJoinQr.setImageBitmap(bmp)
+            }
+        }
+    }
+
+    private fun truncate(text: String, max: Int): String =
+        if (text.length <= max) text else text.take(max) + "…"
 
     // ---------------------------------------------------------------- vouchers
 
@@ -545,19 +686,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun wireSettings() {
         etSsid = findViewById(R.id.set_ssid)
-        etPass = findViewById(R.id.set_pass)
         etWan = findViewById(R.id.set_wan)
         etLan = findViewById(R.id.set_lan)
         setEnv = findViewById(R.id.set_env)
-
-        apModeGroup = findViewById(R.id.set_ap_mode)
-        modeButtons.clear()
-        modeButtons[ApMode.AUTO] = R.id.mode_auto
-        modeButtons[ApMode.NETSHARE] = R.id.mode_netshare
-        modeButtons[ApMode.LOCAL_ONLY] = R.id.mode_localonly
-        modeButtons[ApMode.SYSTEM] = R.id.mode_system
-        modeButtons[ApMode.ROOT_AP] = R.id.mode_rootap
-        modeButtons[ApMode.MANUAL] = R.id.mode_manual
 
         findViewById<Button>(R.id.btn_detect).setOnClickListener {
             scope.launch {
@@ -579,21 +710,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<Button>(R.id.btn_apply).setOnClickListener {
-            val mode = selectedApMode()
             prefs.edit()
                 .putString(HotspotService.KEY_SSID, etSsid.text.toString().trim())
-                .putString(HotspotService.KEY_PASS, etPass.text.toString())
                 .putString(HotspotService.KEY_WAN_IF, etWan.text.toString().trim())
                 .putString(HotspotService.KEY_LAN_IF, etLan.text.toString().trim())
-                .putString(HotspotService.KEY_AP_MODE, mode.key)
                 .apply()
-            AppLog.i(AppLog.TAG_UI, "settings saved - AP mode ${mode.label}, restarting the gateway")
-            if (mode != ApMode.SYSTEM && mode != ApMode.MANUAL && !hasWifiSharePermissions()) {
-                // Every no-toggle method needs these; asking after saving means the
-                // restart that follows can actually succeed.
-                requestWifiSharePermissions()
-            }
-            toast("Saved - restarting with \"${mode.label}\"")
+            AppLog.i(AppLog.TAG_UI, "settings saved - restarting the gateway")
+            // The only AP method needs these; ask now so the restart can succeed.
+            if (!hasWifiSharePermissions()) requestWifiSharePermissions()
+            toast("Saved - restarting the gateway")
             withService { it.restart() }
         }
 
@@ -601,41 +726,31 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_debug_settings).setOnClickListener { openDebugger() }
         findViewById<Button>(R.id.btn_permissions).setOnClickListener {
             if (hasWifiSharePermissions()) {
-                toast("Permissions already granted. If an AP still fails, switch Location ON " +
+                toast("Permissions already granted. If a start still fails, switch Location ON " +
                     "in the system settings, then open the debugger for the reason.")
             } else {
                 requestWifiSharePermissions()
             }
         }
-        findViewById<Button>(R.id.btn_stop_all).setOnClickListener {
-            withService { it.stopSequence() }
-        }
     }
-
-    private fun selectedApMode(): ApMode =
-        modeButtons.entries.firstOrNull { it.value == apModeGroup.checkedRadioButtonId }?.key
-            ?: ApMode.AUTO
 
     private fun loadSettingsIntoFields() {
         etSsid.setText(prefs.getString(HotspotService.KEY_SSID, HotspotService.DEFAULT_SSID))
-        etPass.setText(prefs.getString(HotspotService.KEY_PASS, HotspotService.DEFAULT_PASS))
         etWan.setText(prefs.getString(HotspotService.KEY_WAN_IF, ""))
         etLan.setText(prefs.getString(HotspotService.KEY_LAN_IF, ""))
-        val mode = ApMode.from(prefs.getString(HotspotService.KEY_AP_MODE, ApMode.AUTO.key))
-        modeButtons[mode]?.let { apModeGroup.check(it) }
     }
 
     // ------------------------------------------------------- WiFi-sharing permissions
 
     /**
      * Location (API 26-32) / NEARBY_WIFI_DEVICES (API 33+) are not optional for
-     * NetShare-style sharing: without them the framework refuses to create a
-     * local-only hotspot or a WiFi Direct group and reports a generic error.
+     * WiFi Direct sharing: without them the framework refuses to create a
+     * WiFi Direct group and reports a generic error (BUSY / SecurityException).
      */
     private fun hasWifiSharePermissions(): Boolean {
         val needed = wifiSharePermissions()
         return needed.all {
-            checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED
         }
     }
 
@@ -654,14 +769,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun requestWifiSharePermissions() {
         val missing = wifiSharePermissions().filter {
-            checkSelfPermission(it) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
         }
         if (missing.isEmpty()) {
             toast("All WiFi-sharing permissions are granted")
             return
         }
         AppLog.i(AppLog.TAG_UI, "requesting permissions: ${missing.joinToString()}")
-        androidx.appcompat.app.AlertDialog.Builder(this)
+        AlertDialog.Builder(this)
             .setTitle("Permissions needed to share WiFi")
             .setMessage(R.string.perm_rationale)
             .setPositiveButton("Ask now") { d, _ ->
@@ -679,19 +794,28 @@ class MainActivity : AppCompatActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode != REQ_WIFI_SHARE) return
+        permissionPromptShown = false
         val granted = permissions.mapIndexed { index, permission ->
             permission.substringAfterLast('.') to
-                (grantResults.getOrNull(index) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+                (grantResults.getOrNull(index) == PackageManager.PERMISSION_GRANTED)
         }
         AppLog.i(AppLog.TAG_UI, "permission result: $granted")
         val denied = granted.filterNot { it.second }.map { it.first }
-        toast(
-            if (denied.isEmpty()) "Permissions granted - retrying the hotspot now"
-            else "Denied: ${denied.joinToString()}. The system hotspot still works without them."
-        )
-        // The first attempt already failed with SecurityException. A grant does
-        // not retry by itself; the Hot 8 log sat in WAITING_AP after this.
-        if (denied.isEmpty()) withService { it.retryAp() }
+        if (denied.isEmpty()) {
+            // The grant is CONFIRMED here - and only here do we retry. A
+            // dispatched request never triggers a start on its own.
+            val phase = svc?.state?.phase
+            if (phase == HotspotService.Phase.STARTING ||
+                (phase == HotspotService.Phase.ERROR && svc?.state?.needsLocationPermission == true)
+            ) {
+                toast("Permissions granted - starting the gateway now")
+                withService { it.retryAp() }
+            } else {
+                toast("Permissions granted")
+            }
+        } else {
+            toast("Denied: ${denied.joinToString()}. The gateway cannot create the WiFi network until these are granted.")
+        }
     }
 
     private fun openTetherSettings() {
@@ -723,6 +847,20 @@ class MainActivity : AppCompatActivity() {
             }
             allVouchers = vouchers
             profiles = newProfiles
+
+            // A start that failed ONLY on the permission asks for it itself,
+            // once per failed window.
+            val state = svc?.state
+            if (state?.phase == HotspotService.Phase.ERROR &&
+                state.needsLocationPermission &&
+                !hasWifiSharePermissions() &&
+                !permissionPromptShown
+            ) {
+                permissionPromptShown = true
+                requestWifiSharePermissions()
+            }
+            if (hasWifiSharePermissions()) permissionPromptShown = false
+
             renderDataViews(sessions)
         }
     }

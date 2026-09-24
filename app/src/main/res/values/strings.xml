@@ -7,26 +7,30 @@
     <string name="tab_users">Users</string>
     <string name="tab_settings">Settings</string>
 
-    <string name="btn_start">Start hotspot</string>
-    <string name="btn_stop">Stop hotspot</string>
+    <string name="btn_start">Start</string>
+    <string name="btn_running">Running</string>
+    <string name="btn_stopped">Stopped</string>
     <string name="btn_open_tether">Open Android hotspot settings</string>
     <string name="btn_generate">Generate vouchers</string>
     <string name="btn_detect">Detect</string>
     <string name="btn_apply">Save &amp; restart hotspot</string>
-    <string name="btn_stop_all">Stop everything</string>
     <string name="btn_debugger">Open debugger</string>
     <string name="btn_copy_log">Copy log</string>
     <string name="btn_permissions">Grant WiFi-sharing permissions</string>
 
-    <string name="ap_mode_help">NetShare-style modes create the customer network while the phone
-        stays connected to its own WiFi, so no hotspot toggle is needed - the phone receives
-        internet on one interface and serves customers on another. They need Location permission
-        and Location switched ON (Android refuses to create any WiFi network otherwise).
-        \"Automatic\" tries: existing hotspot, system hotspot command (Android 12+), local-only
-        hotspot, WiFi Direct, root hostapd - and logs every attempt with the reason it failed.</string>
+    <string name="badge_off">OFF</string>
 
-    <string name="perm_rationale">Android only lets an app create a WiFi network (hotspot,
-        local-only hotspot or WiFi Direct group) when it has location permission - and Location
-        must also be switched on in the system settings. Without them every NetShare-style mode
-        fails, and the debugger will report the reason.</string>
+    <string name="join_title">Customers join with one tap (the password is fixed, not secret)</string>
+    <string name="join_pass_label">password</string>
+    <string name="join_qr_desc">QR code for joining the customer WiFi</string>
+
+    <string name="ssid_help">Becomes the DIRECT-… network name. The password is fixed by the app
+        (shown on the dashboard and in the QR) - it is a technical formality; the voucher is the
+        real gate. WiFi Direct needs Location permission and Location switched ON (Android
+        refuses to create any WiFi network otherwise).</string>
+
+    <string name="perm_rationale">Android only lets an app create a WiFi network (a WiFi Direct
+        group, which is how this app works) when it has location permission - and Location
+        must also be switched on in the system settings. Without it the gateway cannot start,
+        and it starts automatically the moment the grant is confirmed.</string>
 </resources>

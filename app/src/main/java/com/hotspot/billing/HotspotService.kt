@@ -14,7 +14,6 @@ import android.net.NetworkInfo
 import android.net.wifi.p2p.WifiP2pManager
 import android.os.Build
 import android.os.IBinder
-import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.hotspot.billing.db.AppDatabase
@@ -33,17 +32,14 @@ import com.hotspot.billing.debug.LogcatWatcher
 import com.hotspot.billing.core.BillingManager
 import com.hotspot.billing.core.DeviceManager
 import com.hotspot.billing.core.DhcpManager
-import com.hotspot.billing.core.DnsManager
-import com.hotspot.billing.core.FirewallManager
-import com.hotspot.billing.core.NatManager
 import com.hotspot.billing.core.NetworkController
 import com.hotspot.billing.core.UsageMonitor
-import com.hotspot.billing.core.WanDetector
 import com.hotspot.billing.core.WatchdogManager
 import com.hotspot.billing.db.HotspotSession
 import com.hotspot.billing.net.ApHandle
 import com.hotspot.billing.net.ApLauncher
-import com.hotspot.billing.net.ApMode
+import com.hotspot.billing.net.ApKind
+import com.hotspot.billing.net.ApRadio
 import com.hotspot.billing.net.IpPool
 import com.hotspot.billing.net.LanPlan
 import com.hotspot.billing.net.SoftApController
@@ -60,25 +56,29 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Owns the entire billing gateway: root lifecycle, AP bring-up (including the
- * NetShare-style paths that need no hotspot toggle), NAT/DHCP/firewall, the
- * captive portal, the voucher expiry sweep, the watchdog and the debug log.
- * Runs as a foreground service so swiping the activity away does not kick
- * paying users off the network.
+ * Owns the billing gateway: root lifecycle, AP bring-up (WiFi Direct group
+ * owner - the only method), NAT/DHCP/firewall, the captive portal, the
+ * voucher expiry sweep, the watchdog and the debug log. Runs as a foreground
+ * service so swiping the activity away does not kick paying users off the
+ * network.
  *
- * Every step is written to [AppLog]: which AP method was tried, what the system
- * answered, which interface appeared, which address was adopted, which firewall
- * rule was applied and what the watchdog found afterwards. The debugger screen
- * turns that into one copyable report.
+ * **The service boots IDLE.** Creating the network, NAT and the portal only
+ * happens when the user taps Start (ACTION_START). Stopping is ACTION_STOP.
+ * A user stop is remembered (manually-stopped flag) so BootReceiver does not
+ * bring the gateway back after a reboot against the user's last decision.
+ *
+ * Every step is written to [AppLog]: which interface appeared, which address
+ * was adopted, which firewall rule was applied and what the watchdog found
+ * afterwards. The debugger screen turns that into one copyable report.
  */
 class HotspotService : android.app.Service() {
 
-    enum class Phase { STARTING, WAITING_AP, RUNNING, STOPPED, ERROR }
+    enum class Phase { IDLE, STARTING, RUNNING, STOPPING, STOPPED, ERROR }
 
     /** Everything the admin UI displays; individual fields are volatile so the
      *  activity can poll them from the main thread safely. */
     class GatewayState {
-        @Volatile var phase: Phase = Phase.STOPPED
+        @Volatile var phase: Phase = Phase.IDLE
         @Volatile var rootOk: Boolean? = null
         @Volatile var lanIf: String? = null
         @Volatile var wanIf: String? = null
@@ -94,9 +94,13 @@ class HotspotService : android.app.Service() {
         @Volatile var startedAt: String? = null
         @Volatile var findings: List<Finding> = emptyList()
         @Volatile var lastHealthCheck: String? = null
+        /** 1..6 while a start is in flight - the badge's "STARTING… N/6". */
+        @Volatile var startStep: Int = 0
+        /** True when the last start failed ONLY because Location is not granted. */
+        @Volatile var needsLocationPermission = false
 
         fun reset() {
-            phase = Phase.STOPPED
+            phase = Phase.IDLE
             rootOk = null
             lanIf = null
             wanIf = null
@@ -112,6 +116,8 @@ class HotspotService : android.app.Service() {
             startedAt = null
             findings = emptyList()
             lastHealthCheck = null
+            startStep = 0
+            needsLocationPermission = false
         }
     }
 
@@ -131,8 +137,9 @@ class HotspotService : android.app.Service() {
     private lateinit var launcher: ApLauncher
     private var portal: CaptivePortalServer? = null
     private var portalGateway: String? = null
+    private var portalSsid: String? = null
 
-    // New core engine (Phase 1-6)
+    // Core engine
     private lateinit var networkController: NetworkController
     private lateinit var watchdogManager: WatchdogManager
     private lateinit var deviceManager: DeviceManager
@@ -155,7 +162,6 @@ class HotspotService : android.app.Service() {
         voucherManager = VoucherManager(db)
         prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         launcher = ApLauncher(this)
-        // Init new core engine
         networkController = NetworkController(launcher)
         watchdogManager = WatchdogManager()
         deviceManager = DeviceManager(db)
@@ -163,16 +169,37 @@ class HotspotService : android.app.Service() {
         usageMonitor = UsageMonitor(db)
         createChannel()
         registerStateReceivers()
+
+        // The service boots IDLE: it deploys its scripts, checks root and shows
+        // the status - it does NOT create the network. Start is the user's tap.
+        state.phase = Phase.IDLE
+        state.message = "Idle - press Start"
         startInForeground()
         log("service created (Android ${Build.VERSION.RELEASE}, API ${Build.VERSION.SDK_INT}, ${Build.MODEL})")
-        log("core engine: NetworkController + WanDetector + DhcpManager + NatManager + DnsManager + FirewallManager + WatchdogManager + DeviceManager + BillingManager + UsageMonitor")
+        log("service IDLE - the gateway only starts when the user taps Start (ACTION_START)")
+
+        scope.launch {
+            deployScripts()
+            try {
+                state.rootOk = RootShell.isRootAvailable()
+            } catch (e: Throwable) {
+                AppLog.e(AppLog.TAG_ROOT, "root check failed", e)
+                state.rootOk = false
+            }
+            if (state.rootOk != true) {
+                state.message = "Root not granted - allow this app in Magisk, then press Start"
+            }
+            log("service idle check: root=${state.rootOk ?: "unknown"}")
+            updateNotification()
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
+            ACTION_START -> startSequence()
             ACTION_STOP -> stopSequence()
             ACTION_DIAGNOSE -> scope.launch { runDiagnostics("requested from the notification") }
-            else -> startSequence()
+            null, else -> log("service started without an action - staying IDLE (Start is the user's tap)")
         }
         return START_STICKY
     }
@@ -202,17 +229,32 @@ class HotspotService : android.app.Service() {
     /** Start (or keep) the gateway. Safe to call repeatedly. */
     fun startSequence() {
         if (gatewayJob?.isActive == true) return
+        // The user just asked for the gateway: a later reboot must start it.
+        prefs.edit().putBoolean(KEY_MANUALLY_STOPPED, false).apply()
+        log("user pressed Start (ACTION_START)")
         gatewayJob = scope.launch { runGateway() }
     }
 
     /** Tear everything down but keep the (silent) service alive. */
     fun stopSequence() {
+        prefs.edit().putBoolean(KEY_MANUALLY_STOPPED, true).apply()
+        if (state.phase != Phase.RUNNING && state.phase != Phase.STARTING &&
+            state.phase != Phase.ERROR && state.phase != Phase.STOPPING
+        ) {
+            log("user pressed Stop (ACTION_STOP) - already idle, nothing to tear down")
+            state.phase = Phase.STOPPED
+            state.message = "Stopped"
+            updateNotification()
+            return
+        }
+        log("user pressed Stop (ACTION_STOP)")
         gatewayJob?.cancel()
         gatewayJob = scope.launch { teardown() }
     }
 
     /** Apply new settings: full stop, then start again. */
     fun restart() {
+        prefs.edit().putBoolean(KEY_MANUALLY_STOPPED, false).apply()
         gatewayJob?.cancel()
         gatewayJob = scope.launch {
             teardown()
@@ -267,9 +309,19 @@ class HotspotService : android.app.Service() {
     /** Runs a fresh health check on demand (the debugger's "Check now" button). */
     suspend fun checkNow(): List<Finding> = withContext(Dispatchers.IO) { healthCheck(report = true) }
 
-    /** Re-runs the whole AP strategy on demand ("Try NetShare again"). */
+    /**
+     * Re-runs the start sequence on demand. Only when the user's last intent
+     * was a start (a STARTING or a failed start) - a confirmed permission grant
+     * must not start a gateway the user has stopped.
+     */
     fun retryAp() {
-        log("AP retry requested from the UI")
+        val phase = state.phase
+        if (phase != Phase.STARTING && phase != Phase.ERROR) {
+            log("AP retry requested but the gateway is $phase - not restarting")
+            return
+        }
+        log("AP retry requested from the UI (permission grant confirmed)")
+        prefs.edit().putBoolean(KEY_MANUALLY_STOPPED, false).apply()
         gatewayJob?.cancel()
         gatewayJob = scope.launch { runGateway() }
     }
@@ -331,40 +383,37 @@ class HotspotService : android.app.Service() {
             AppLog.w(AppLog.TAG_BILLING, "billing: ensureDefaultPlans failed ${e.message}")
         }
 
-        val mode = ApMode.from(prefs.getString(KEY_AP_MODE, ApMode.AUTO.key))
-        val ssid = prefs.getString(KEY_SSID, DEFAULT_SSID) ?: DEFAULT_SSID
-        val pass = prefs.getString(KEY_PASS, DEFAULT_PASS) ?: DEFAULT_PASS
-        val pin = prefs.getString(KEY_LAN_IF, null)?.trim()?.takeIf { it.isNotEmpty() }
-        state.apMode = mode.label
+        val ssid = (prefs.getString(KEY_SSID, DEFAULT_SSID) ?: DEFAULT_SSID).ifBlank { DEFAULT_SSID }
+        state.apMode = ApKind.WIFI_DIRECT.label
 
-        // --- New Engine: NetworkController START flow ---
-        // Detect WAN, create LAN, start DHCP/DNS/NAT, test internet
+        // Gate AP creation on a CONFIRMED Location grant, not on a request that
+        // was dispatched. createGroup (and its predecessors) throw or hide
+        // themselves while the permission is missing.
+        if (!ApRadio.hasLocationPermission(this)) {
+            state.needsLocationPermission = true
+            state.phase = Phase.ERROR
+            state.message = "Location permission not confirmed - grant it (it happens automatically " +
+                "when the dialog appears) and the gateway starts on its own."
+            log("gateway NOT started: Location permission is not granted yet - the UI will ask, " +
+                "and the start retries the moment the grant is confirmed")
+            updateNotification()
+            return
+        }
+        state.needsLocationPermission = false
+
         val startResult = withContext(Dispatchers.IO) {
-            networkController.start(mode, ssid, pass, pin) { log(it) }
+            networkController.start(ssid, { log(it) }) { step ->
+                state.startStep = step
+            }
         }
 
         when (startResult) {
             is NetworkController.StartResult.Failed -> {
-                // If NetworkController failed at WAN or LAN creation, fallback to old waiting logic
-                if (startResult.step == NetworkController.Step.WAN_DETECTION ||
-                    startResult.step == NetworkController.Step.LAN_CREATION) {
-                    log("network: NetworkController failed at ${startResult.step}: ${startResult.reason}, trying fallback waiting")
-                    state.phase = Phase.WAITING_AP
-                    state.message = waitingMessage(mode) + " Reason: ${startResult.reason}"
-                    updateNotification()
-
-                    val discovered = waitForApOrInterface(mode, ssid, pass, pin) ?: return
-                    applyHandle(launcher.current())
-                    val lan = discovered
-                    withContext(Dispatchers.IO) { launcher.waitForAddress(lan, ADDRESS_WAIT_MS) { log(it) } }
-                    if (!configureGateway(lan)) return
-                } else {
-                    state.phase = Phase.ERROR
-                    state.message = "Failed at ${startResult.step}: ${startResult.reason}"
-                    log("network: START failed at ${startResult.step}: ${startResult.reason}")
-                    updateNotification()
-                    return
-                }
+                state.phase = Phase.ERROR
+                state.message = startResult.reason
+                log("network: START failed at ${startResult.step}: ${startResult.reason}")
+                updateNotification()
+                return
             }
             is NetworkController.StartResult.Success -> {
                 currentApHandle = startResult.apHandle
@@ -386,7 +435,7 @@ class HotspotService : android.app.Service() {
                 // Record hotspot session (Phase 7)
                 try {
                     val session = HotspotSession(
-                        mode = mode.key,
+                        mode = "wifi_direct",
                         status = "RUNNING",
                         wanIf = state.wanIf,
                         lanIf = state.lanIf,
@@ -401,8 +450,10 @@ class HotspotService : android.app.Service() {
                 }
 
                 state.phase = Phase.RUNNING
-                state.message = "Running on ${startResult.lanIf} via ${startResult.apHandle?.kind?.label ?: "unknown"} · http://${state.gatewayIp}/ · ${startResult.wanInfo.type} ${startResult.wanInfo.interfaceName}"
-                log("gateway running via NetworkController: WAN=${startResult.wanInfo.interfaceName} LAN=${startResult.lanIf} gateway=${state.gatewayIp}")
+                state.message = "Running on ${startResult.lanIf} via ${startResult.apHandle?.kind?.label ?: "WiFi Direct"} · " +
+                    "http://${state.gatewayIp}/ · ${startResult.wanInfo.type} ${startResult.wanInfo.interfaceName}"
+                log("gateway running: WAN=${startResult.wanInfo.interfaceName} LAN=${startResult.lanIf} " +
+                    "gateway=${state.gatewayIp} - the portal should pop for each new client")
                 updateNotification()
             }
         }
@@ -423,96 +474,29 @@ class HotspotService : android.app.Service() {
         }
     }
 
-    private fun waitingMessage(mode: ApMode): String = when (mode) {
-        ApMode.MANUAL, ApMode.SYSTEM ->
-            "Hotspot is off. Switch it on from quick settings or press " +
-                "\u201cOpen Android hotspot settings\u201d - the gateway takes over automatically."
-        else ->
-            "No WiFi network could be created yet (see the debugger for the reason). " +
-                "Retrying every ${RETRY_INTERVAL_MS / 1000}s. Switch the Android hotspot on " +
-                "and this gateway takes over immediately."
-    }
-
-    /**
-     * Waits for any AP interface to appear, re-running the chosen strategy every
-     * [RETRY_INTERVAL_MS] so a later fix (Location switched on, WiFi reconnected,
-     * driver ready) is picked up without a restart.
-     */
-    private suspend fun waitForApOrInterface(
-        mode: ApMode,
-        ssid: String,
-        pass: String,
-        pin: String?
-    ): String? {
-        var attempt = 0
-        val started = SystemClock.elapsedRealtime()
-        while (true) {
-            SoftApController.apInterface(pin ?: state.lanIf)?.let { return it }
-            if (SystemClock.elapsedRealtime() - started > RETRY_INTERVAL_MS) {
-                attempt++
-                log("ap: retry #$attempt - trying \"${mode.label}\" again")
-                val handle = withContext(Dispatchers.IO) {
-                    launcher.launch(mode, ssid, pass, pin) { log(it) }
-                }
-                applyHandle(handle)
-                handle?.interfaceName?.let { return it }
-            }
-            delay(POLL_INTERVAL_MS)
-        }
-    }
-
     /** One pass of the watchdog. Returns false when the gateway should stop. */
     private suspend fun monitorOnce(): Boolean {
         monitorTicks++
         val lan = SoftApController.apInterface(state.lanIf)
 
-        // --- New: Use WatchdogManager for granular heal ---
+        // --- Use WatchdogManager for granular heal ---
         val watchdogResult = withContext(Dispatchers.IO) {
             watchdogManager.check(state.lanIf)
         }
 
         if (watchdogResult.issues.isNotEmpty()) {
             log("watchdog: check found issues: ${watchdogResult.issues.joinToString()}")
-            // Try granular heal first
             val healed = withContext(Dispatchers.IO) {
                 watchdogManager.heal(watchdogResult) { log(it) }
             }
-            if (!healed) {
-                // AP gone or critical failure -> fallback to full recovery path
-                if (!watchdogResult.apAlive) {
-                    log("watchdog: LAN interface ${state.lanIf ?: "?"} disappeared")
-                    if (launcher.current()?.interfaceName == state.lanIf) launcher.noteSystemTookTheAp { log(it) }
-                    state.phase = Phase.WAITING_AP
-                    state.message = "Hotspot went off - switch it back on, the gateway re-arms itself."
-                    updateNotification()
-                    val mode = ApMode.from(prefs.getString(KEY_AP_MODE, ApMode.AUTO.key))
-                    val ssid = prefs.getString(KEY_SSID, DEFAULT_SSID) ?: DEFAULT_SSID
-                    val pass = prefs.getString(KEY_PASS, DEFAULT_PASS) ?: DEFAULT_PASS
-                    val pin = prefs.getString(KEY_LAN_IF, null)?.trim()?.takeIf { it.isNotEmpty() }
-                    val back = waitForApOrInterface(mode, ssid, pass, pin) ?: return false
-                    applyHandle(launcher.current())
-                    withContext(Dispatchers.IO) { launcher.waitForAddress(back, ADDRESS_WAIT_MS) { log(it) } }
-                    if (!configureGateway(back)) return false
-                    return true
-                }
+            if (!healed && !watchdogResult.apAlive) {
+                return rearmAfterApLoss()
             }
         }
 
-        if (lan == null) {
-            log("watchdog: LAN interface ${state.lanIf ?: "?"} disappeared (legacy check)")
-            if (launcher.current()?.interfaceName == state.lanIf) launcher.noteSystemTookTheAp { log(it) }
-            state.phase = Phase.WAITING_AP
-            state.message = "Hotspot went off - switch it back on, the gateway re-arms itself."
-            updateNotification()
-            val mode = ApMode.from(prefs.getString(KEY_AP_MODE, ApMode.AUTO.key))
-            val ssid = prefs.getString(KEY_SSID, DEFAULT_SSID) ?: DEFAULT_SSID
-            val pass = prefs.getString(KEY_PASS, DEFAULT_PASS) ?: DEFAULT_PASS
-            val pin = prefs.getString(KEY_LAN_IF, null)?.trim()?.takeIf { it.isNotEmpty() }
-            val back = waitForApOrInterface(mode, ssid, pass, pin) ?: return false
-            applyHandle(launcher.current())
-            withContext(Dispatchers.IO) { launcher.waitForAddress(back, ADDRESS_WAIT_MS) { log(it) } }
-            if (!configureGateway(back)) return false
-            return true
+        if (lan == null || !watchdogResult.apAlive) {
+            log("watchdog: LAN interface ${state.lanIf ?: "?"} disappeared")
+            return rearmAfterApLoss()
         }
 
         // Do NOT treat "address is not 10.66.0.1" as drift. Forcing that address
@@ -562,9 +546,41 @@ class HotspotService : android.app.Service() {
     }
 
     /**
+     * The AP went away while we were running (WiFi toggled, radio reset, the
+     * group evicted). Re-create it straight away - the gateway is supposed to
+     * be up. If the re-creation fails the gateway reports ERROR and the user's
+     * Start tap is the retry; there is no silent waiting loop.
+     */
+    private suspend fun rearmAfterApLoss(): Boolean {
+        log("watchdog: re-creating the WiFi Direct group")
+        state.phase = Phase.STARTING
+        state.message = "Hotspot went off - re-creating the WiFi Direct group..."
+        updateNotification()
+
+        val ssid = (prefs.getString(KEY_SSID, DEFAULT_SSID) ?: DEFAULT_SSID).ifBlank { DEFAULT_SSID }
+        val handle = withContext(Dispatchers.IO) { launcher.launch(ssid) { log(it) } }
+        val iface = handle?.interfaceName
+        if (iface == null) {
+            state.phase = Phase.ERROR
+            state.message = "Could not re-create the WiFi Direct group after it was lost " +
+                "(see the debugger). Tap Start to retry."
+            log("watchdog: re-arm FAILED - no group could be created")
+            updateNotification()
+            return false
+        }
+        currentApHandle = handle
+        applyHandle(handle)
+        state.lanIf = iface
+        withContext(Dispatchers.IO) { launcher.waitForAddress(iface, ADDRESS_WAIT_MS) { log(it) } }
+        if (!configureGateway(iface)) return false
+        return true
+    }
+
+    /**
      * Collects the watchdog's view of the gateway and turns it into findings.
-     * New findings are logged once (with their H-code); recovered ones are logged
-     * once as well, so the log reads as a story instead of a broken record.
+     * New findings are logged once (with their H-code); recovered ones are
+     * logged once as well, so the log reads as a story instead of a broken
+     * record.
      */
     private suspend fun healthCheck(report: Boolean): List<Finding> = withContext(Dispatchers.IO) {
         val lan = state.lanIf
@@ -716,20 +732,24 @@ class HotspotService : android.app.Service() {
     }
 
     private fun ensurePortal(gateway: String) {
-        if (portal != null && portalGateway != gateway) {
+        val ssid = state.apSsid
+        val pass = state.apPassword
+        if (portal != null && (portalGateway != gateway || portalSsid != ssid)) {
             try { portal?.stop() } catch (e: Exception) { /* rebound onto the new gateway */ }
             portal = null
         }
         if (portal == null) {
-            portal = CaptivePortalServer(voucherManager, gateway) { AppLog.i(AppLog.TAG_PORTAL, it) }
+            portal = CaptivePortalServer(voucherManager, gateway, ssid, pass) { AppLog.i(AppLog.TAG_PORTAL, it) }
             try {
                 portal?.start()
-                log("captive portal listening on 0.0.0.0:${CaptivePortalServer.PORT} (gateway $gateway)")
+                log("captive portal listening on 0.0.0.0:${CaptivePortalServer.PORT} " +
+                    "(gateway $gateway, join card: ${ssid ?: "no SSID yet"} / ${pass ?: "?"})")
             } catch (e: Exception) {
                 log("captive portal failed to start: ${e.message}")
                 AppLog.e(AppLog.TAG_PORTAL, "portal start failed", e)
             }
             portalGateway = gateway
+            portalSsid = ssid
         }
         state.portalRunning = portal?.isAlive ?: false
     }
@@ -748,9 +768,15 @@ class HotspotService : android.app.Service() {
 
     private suspend fun teardown() = withContext(Dispatchers.IO) {
         log("stopping gateway")
+        // The button shows "Stopped" during this whole window and is disabled,
+        // so a second tap cannot race the teardown.
+        state.phase = Phase.STOPPING
+        state.message = "Stopping..."
+        updateNotification()
         try { portal?.stop() } catch (e: Exception) { /* already stopped */ }
         portal = null
         portalGateway = null
+        portalSsid = null
         state.portalRunning = false
 
         // Use NetworkController STOP for clean shutdown
@@ -778,26 +804,12 @@ class HotspotService : android.app.Service() {
         }
 
         launcher.release { log(it) }
-        SoftApController.stopAp { log(it) }
         state.reset()
         state.phase = Phase.STOPPED
         state.message = "Stopped"
         reportedFindings.clear()
-        log("gateway stopped")
+        log("gateway stopped - teardown confirmed complete (the Start button is back)")
         updateNotification()
-    }
-
-    /** Polls for the hotspot interface; returns it, or null on timeout/cancel. */
-    private suspend fun waitForLanInterface(timeoutMs: Long): String? {
-        val started = SystemClock.elapsedRealtime()
-        while (true) {
-            val pinned = prefs.getString(KEY_LAN_IF, null)?.trim()?.takeIf { it.isNotEmpty() }
-            SoftApController.apInterface(pinned)?.let { return it }
-            if (timeoutMs != Long.MAX_VALUE &&
-                SystemClock.elapsedRealtime() - started > timeoutMs
-            ) return null
-            delay(POLL_INTERVAL_MS)
-        }
     }
 
     private fun writeEnvFromPrefs() {
@@ -852,9 +864,9 @@ class HotspotService : android.app.Service() {
 
     /**
      * Logs what the system does to WiFi/the AP while we run, and re-arms the
-     * gateway when a hotspot interface appears or disappears. Everything here is
-     * diagnostic first: a state change that we only learn about from logcat is a
-     * state change we cannot react to.
+     * gateway when the internet side moves. Everything here is diagnostic
+     * first: a state change that we only learn about from logcat is a state
+     * change we cannot react to.
      */
     private val stateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -881,6 +893,9 @@ class HotspotService : android.app.Service() {
                         WifiP2pManager.EXTRA_NETWORK_INFO
                     )
                     log("system broadcast: WiFi Direct -> ${info?.state} connected=${info?.isConnected}")
+                    if (info?.isConnected == false && state.phase == Phase.RUNNING) {
+                        log("system broadcast: our P2P group lost its connection - the watchdog re-arms it")
+                    }
                 }
                 WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION -> {
                     val extra = intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1)
@@ -1001,7 +1016,7 @@ class HotspotService : android.app.Service() {
         val text = state.message.ifBlank { state.phase.name.lowercase() }
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("RNS Hotspot")
+            .setContentTitle("RNS Hotspot - ${state.phase.name.lowercase()}")
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setOngoing(true)
@@ -1046,10 +1061,13 @@ class HotspotService : android.app.Service() {
         const val KEY_PASS = "pass"
         const val KEY_WAN_IF = "wan_if"
         const val KEY_LAN_IF = "lan_if"
-        const val KEY_AP_MODE = "ap_mode"
         const val KEY_LOGCAT_MODE = "logcat_mode"
+        /**
+         * The user's last Start/Stop decision, so BootReceiver does not bring
+         * the gateway back after a reboot when it was the one who stopped it.
+         */
+        const val KEY_MANUALLY_STOPPED = "manually_stopped"
         const val DEFAULT_SSID = "RNS-Hotspot"
-        const val DEFAULT_PASS = "hotspot123"
 
         /** Not in the SDK: the string itself has been stable since Android 2. */
         private const val AP_STATE_ACTION = "android.net.wifi.WIFI_AP_STATE_CHANGED"
@@ -1058,10 +1076,7 @@ class HotspotService : android.app.Service() {
         private const val SCRIPT_DIR = "/data/local/tmp"
         private val SCRIPTS = listOf("setup_network.sh", "bandwidth_control.sh", "netshare_ap.sh")
         private const val MONITOR_INTERVAL_MS = 8_000L
-        private const val POLL_INTERVAL_MS = 2_000L
-        private const val AP_WAIT_MS = 15_000L
         private const val ADDRESS_WAIT_MS = 12_000L
-        private const val RETRY_INTERVAL_MS = 20_000L
         private const val DEEP_CHECK_EVERY_TICKS = 8
         private const val MAX_LOG_LINES = 400
         private const val DEVICE_SEEN_UPDATE_MS = 5 * 60_000L

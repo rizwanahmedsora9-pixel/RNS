@@ -1,75 +1,19 @@
 package com.hotspot.billing.net
 
 /**
- * How the phone should create the network the customers join.
- *
- * The point of the NetShare-style modes is that the phone keeps its own WiFi
- * connection (that is the internet side) and creates a *second* WiFi network at
- * the same time, so nobody has to touch the Android hotspot toggle - and on
- * Android 9/10 there is no root command that flips that toggle anyway.
+ * What is providing the customer-facing AP. One method by design: a WiFi Direct
+ * group the phone owns (the NetShare technique). The earlier multi-method
+ * cascade (system softap, local-only hotspot, root hostapd, manual wait) is
+ * gone - a single reproducible path is what made the failure reasons readable.
  */
-enum class ApMode(val key: String, val label: String, val description: String) {
-
-    AUTO(
-        "auto", "Automatic (recommended)",
-        "Turn WiFi and Location on, then try the system hotspot (what the Hot 8 can " +
-            "actually start), local-only hotspot, WiFi Direct, and root hostapd. " +
-            "On a WiFi uplink the system hotspot is tried last so it does not " +
-            "disconnect the internet."
-    ),
-
-    SYSTEM(
-        "system", "Android hotspot only",
-        "Use the phone's real hotspot (ap0). The app starts it as root — a normal " +
-            "app is not allowed to, which is why the Hot 8 log shows a SecurityException " +
-            "from the app uid. On a single-radio phone this disconnects a WiFi uplink."
-    ),
-
-    NETSHARE(
-        "netshare", "NetShare - WiFi Direct AP",
-        "Creates a WiFi Direct group the phone owns (DIRECT-xx network). Needs WiFi " +
-            "and Location switched on — while either is off, createGroup returns BUSY, " +
-            "which is the disabled state, not another group. If Direct still refuses, " +
-            "the system hotspot is tried so the gateway is not stuck waiting."
-    ),
-
-    LOCAL_ONLY(
-        "localonly", "Local-only hotspot API",
-        "Android's LocalOnlyHotspot: an AP the app can create without the toggle. " +
-            "The system gives it no internet by design - this app adds the NAT itself " +
-            "with root, which is what makes it usable."
-    ),
-
-    ROOT_AP(
-        "rootap", "Root hostapd (experimental)",
-        "Asks the WiFi driver for a second interface and runs hostapd on it as root. " +
-            "Only works when the chip supports STA+AP concurrency."
-    ),
-
-    MANUAL(
-        "manual", "Wait for the toggle",
-        "Do not create anything; configure the gateway the moment a hotspot interface " +
-            "appears."
-    );
-
-    companion object {
-        fun from(key: String?): ApMode = values().firstOrNull { it.key == key } ?: AUTO
-    }
-}
-
-/** What actually ended up providing the AP. */
 enum class ApKind(val label: String) {
-    SYSTEM_HOTSPOT("Android hotspot"),
-    LOCAL_ONLY("local-only hotspot"),
-    WIFI_DIRECT("WiFi Direct group (NetShare)"),
-    ROOT_HOSTAPD("root hostapd"),
-    MANUAL_TOGGLE("manual toggle")
+    WIFI_DIRECT("WiFi Direct group (NetShare)")
 }
 
 /**
  * A running AP we can hand to the gateway. [onClose] releases the framework
- * reservation/group; it must be called on teardown or the network stays up after
- * the app is stopped (and Android will not let us create a new one).
+ * reservation/group; it must be called on teardown or the network stays up
+ * after the app is stopped (and Android will not let us create a new one).
  */
 class ApHandle(
     val kind: ApKind,
@@ -78,8 +22,9 @@ class ApHandle(
     val password: String?,
     val detail: String = "",
     /**
-     * True when Android's tether stack owns DHCP for this AP. Killing that
-     * dnsmasq makes the Hot 8 run stopSoftAp.
+     * True when Android's tether stack owns DHCP for this AP. A WiFi Direct
+     * group is not a tethering network, so this is false for our handle and
+     * our dnsmasq is free to own port 67.
      */
     val leaveAndroidDhcp: Boolean = false,
     private val onClose: (() -> Unit)? = null
@@ -133,8 +78,7 @@ object ApConfigText {
     /**
      * hostapd.conf as the system writes it (`/data/vendor/wifi/hostapd/hostapd.conf`).
      * This is the authoritative SSID/passphrase for whatever AP the phone is
-     * running right now, including a local-only hotspot on Android 9/10 where the
-     * public API hides them.
+     * running right now.
      */
     fun parseHostapd(text: String): ApConfig? {
         var iface: String? = null
@@ -178,7 +122,7 @@ object ApConfigText {
     }
 
     /** WPA2 passphrases are 8..63 printable ASCII characters. */
-    fun sanitizePassphrase(requested: String?, fallback: String = "hotspot123"): String {
+    fun sanitizePassphrase(requested: String?, fallback: String = JoinConfig.FIXED_PASSPHRASE): String {
         val clean = (requested ?: "").replace(Regex("[^\\x20-\\x7E]"), "").trim()
         return when {
             clean.length in 8..63 -> clean
@@ -238,7 +182,8 @@ object ApConfigText {
 
     /** Ordered by "most likely to be the customer-facing AP". */
     val AP_NAME_PRIORITY = listOf(
-        "ap", "rnsap", "softap", "swlan", "wifi_ap", "uap", "wlan1", "wlan2", "p2p", "usb0", "eth0"
+        "p2p", "wifi_p2p", "rnsap", "ap", "softap", "swlan", "wifi_ap", "uap",
+        "wlan1", "wlan2", "usb0", "eth0"
     )
 
     /** True for names a WiFi-Direct group owner typically lands on. */
