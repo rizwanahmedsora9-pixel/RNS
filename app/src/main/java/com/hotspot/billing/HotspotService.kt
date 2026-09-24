@@ -199,7 +199,7 @@ class HotspotService : android.app.Service() {
             ACTION_START -> startSequence()
             ACTION_STOP -> stopSequence()
             ACTION_DIAGNOSE -> scope.launch { runDiagnostics("requested from the notification") }
-            null, else -> log("service started without an action - staying IDLE (Start is the user's tap)")
+            else -> log("service started without an action - staying IDLE (Start is the user's tap)")
         }
         return START_STICKY
     }
