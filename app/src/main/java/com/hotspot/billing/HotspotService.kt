@@ -30,6 +30,17 @@ import com.hotspot.billing.debug.HealthInput
 import com.hotspot.billing.debug.HttpProbe
 import com.hotspot.billing.debug.LogFormat
 import com.hotspot.billing.debug.LogcatWatcher
+import com.hotspot.billing.core.BillingManager
+import com.hotspot.billing.core.DeviceManager
+import com.hotspot.billing.core.DhcpManager
+import com.hotspot.billing.core.DnsManager
+import com.hotspot.billing.core.FirewallManager
+import com.hotspot.billing.core.NatManager
+import com.hotspot.billing.core.NetworkController
+import com.hotspot.billing.core.UsageMonitor
+import com.hotspot.billing.core.WanDetector
+import com.hotspot.billing.core.WatchdogManager
+import com.hotspot.billing.db.HotspotSession
 import com.hotspot.billing.net.ApHandle
 import com.hotspot.billing.net.ApLauncher
 import com.hotspot.billing.net.ApMode
@@ -121,6 +132,15 @@ class HotspotService : android.app.Service() {
     private var portal: CaptivePortalServer? = null
     private var portalGateway: String? = null
 
+    // New core engine (Phase 1-6)
+    private lateinit var networkController: NetworkController
+    private lateinit var watchdogManager: WatchdogManager
+    private lateinit var deviceManager: DeviceManager
+    private lateinit var billingManager: BillingManager
+    private lateinit var usageMonitor: UsageMonitor
+    private var currentApHandle: ApHandle? = null
+    private var currentHotspotSessionId: Long? = null
+
     /** Codes currently reported by the watchdog, so a finding is logged once. */
     private val reportedFindings = LinkedHashSet<String>()
     private var monitorTicks = 0
@@ -135,10 +155,17 @@ class HotspotService : android.app.Service() {
         voucherManager = VoucherManager(db)
         prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         launcher = ApLauncher(this)
+        // Init new core engine
+        networkController = NetworkController(launcher)
+        watchdogManager = WatchdogManager()
+        deviceManager = DeviceManager(db)
+        billingManager = BillingManager(db, voucherManager)
+        usageMonitor = UsageMonitor(db)
         createChannel()
         registerStateReceivers()
         startInForeground()
         log("service created (Android ${Build.VERSION.RELEASE}, API ${Build.VERSION.SDK_INT}, ${Build.MODEL})")
+        log("core engine: NetworkController + WanDetector + DhcpManager + NatManager + DnsManager + FirewallManager + WatchdogManager + DeviceManager + BillingManager + UsageMonitor")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -297,32 +324,90 @@ class HotspotService : android.app.Service() {
         deployScripts()
         startLogcatWatcher()
 
+        // Ensure default voucher plans exist (Phase 8)
+        try {
+            billingManager.ensureDefaultPlans()
+        } catch (e: Throwable) {
+            AppLog.w(AppLog.TAG_BILLING, "billing: ensureDefaultPlans failed ${e.message}")
+        }
+
         val mode = ApMode.from(prefs.getString(KEY_AP_MODE, ApMode.AUTO.key))
         val ssid = prefs.getString(KEY_SSID, DEFAULT_SSID) ?: DEFAULT_SSID
         val pass = prefs.getString(KEY_PASS, DEFAULT_PASS) ?: DEFAULT_PASS
         val pin = prefs.getString(KEY_LAN_IF, null)?.trim()?.takeIf { it.isNotEmpty() }
         state.apMode = mode.label
 
-        val handle = withContext(Dispatchers.IO) { launcher.launch(mode, ssid, pass, pin) { log(it) } }
-        applyHandle(handle)
-
-        var discovered = handle?.interfaceName ?: waitForLanInterface(AP_WAIT_MS)
-        if (discovered == null) {
-            state.phase = Phase.WAITING_AP
-            state.message = waitingMessage(mode)
-            updateNotification()
-            discovered = waitForApOrInterface(mode, ssid, pass, pin) ?: return // cancelled
-            applyHandle(launcher.current())
+        // --- New Engine: NetworkController START flow ---
+        // Detect WAN, create LAN, start DHCP/DNS/NAT, test internet
+        val startResult = withContext(Dispatchers.IO) {
+            networkController.start(mode, ssid, pass, pin) { log(it) }
         }
-        val lan = discovered
 
-        // Wait for the address before configuring: assigning 10.66.0.1 a moment
-        // before Android writes its own is what left clients on "Obtaining IP".
-        withContext(Dispatchers.IO) { launcher.waitForAddress(lan, ADDRESS_WAIT_MS) { log(it) } }
+        when (startResult) {
+            is NetworkController.StartResult.Failed -> {
+                // If NetworkController failed at WAN or LAN creation, fallback to old waiting logic
+                if (startResult.step == NetworkController.Step.WAN_DETECTION ||
+                    startResult.step == NetworkController.Step.LAN_CREATION) {
+                    log("network: NetworkController failed at ${startResult.step}: ${startResult.reason}, trying fallback waiting")
+                    state.phase = Phase.WAITING_AP
+                    state.message = waitingMessage(mode) + " Reason: ${startResult.reason}"
+                    updateNotification()
 
-        if (!configureGateway(lan)) return
+                    val discovered = waitForApOrInterface(mode, ssid, pass, pin) ?: return
+                    applyHandle(launcher.current())
+                    val lan = discovered
+                    withContext(Dispatchers.IO) { launcher.waitForAddress(lan, ADDRESS_WAIT_MS) { log(it) } }
+                    if (!configureGateway(lan)) return
+                } else {
+                    state.phase = Phase.ERROR
+                    state.message = "Failed at ${startResult.step}: ${startResult.reason}"
+                    log("network: START failed at ${startResult.step}: ${startResult.reason}")
+                    updateNotification()
+                    return
+                }
+            }
+            is NetworkController.StartResult.Success -> {
+                currentApHandle = startResult.apHandle
+                applyHandle(startResult.apHandle)
+                state.lanIf = startResult.lanIf
+                state.wanIf = startResult.wanInfo.interfaceName
+                state.gatewayIp = startResult.lanPlan?.gateway ?: startResult.dhcpConfig.gateway
+                state.dhcpOwner = startResult.lanPlan?.dhcpOwner ?: "ours"
+                IpPool.configure(startResult.lanPlan ?: LanPlan.DEFAULT)
 
-        // Cancellation (Stop / restart) exits through delay() throwing.
+                // Init bandwidth
+                val shaper = RootShell.initBandwidth()
+                if (!shaper.isSuccess) {
+                    log("shaper init warning: ${shaper.err.firstOrNull()?.trim() ?: "unknown"}")
+                }
+                voucherManager.reapplyAll()
+                ensurePortal(state.gatewayIp ?: startResult.dhcpConfig.gateway)
+
+                // Record hotspot session (Phase 7)
+                try {
+                    val session = HotspotSession(
+                        mode = mode.key,
+                        status = "RUNNING",
+                        wanIf = state.wanIf,
+                        lanIf = state.lanIf,
+                        ssid = state.apSsid
+                    )
+                    currentHotspotSessionId = withContext(Dispatchers.IO) {
+                        db.hotspotSessionDao().insert(session)
+                    }
+                    log("hotspot session recorded id=$currentHotspotSessionId")
+                } catch (e: Throwable) {
+                    AppLog.w(AppLog.TAG_SERVICE, "session record failed ${e.message}")
+                }
+
+                state.phase = Phase.RUNNING
+                state.message = "Running on ${startResult.lanIf} via ${startResult.apHandle?.kind?.label ?: "unknown"} · http://${state.gatewayIp}/ · ${startResult.wanInfo.type} ${startResult.wanInfo.interfaceName}"
+                log("gateway running via NetworkController: WAN=${startResult.wanInfo.interfaceName} LAN=${startResult.lanIf} gateway=${state.gatewayIp}")
+                updateNotification()
+            }
+        }
+
+        // Watchdog loop with granular heal
         while (true) {
             delay(MONITOR_INTERVAL_MS)
             if (!monitorOnce()) return
@@ -380,9 +465,41 @@ class HotspotService : android.app.Service() {
     private suspend fun monitorOnce(): Boolean {
         monitorTicks++
         val lan = SoftApController.apInterface(state.lanIf)
+
+        // --- New: Use WatchdogManager for granular heal ---
+        val watchdogResult = withContext(Dispatchers.IO) {
+            watchdogManager.check(state.lanIf)
+        }
+
+        if (watchdogResult.issues.isNotEmpty()) {
+            log("watchdog: check found issues: ${watchdogResult.issues.joinToString()}")
+            // Try granular heal first
+            val healed = withContext(Dispatchers.IO) {
+                watchdogManager.heal(watchdogResult) { log(it) }
+            }
+            if (!healed) {
+                // AP gone or critical failure -> fallback to full recovery path
+                if (!watchdogResult.apAlive) {
+                    log("watchdog: LAN interface ${state.lanIf ?: "?"} disappeared")
+                    if (launcher.current()?.interfaceName == state.lanIf) launcher.noteSystemTookTheAp { log(it) }
+                    state.phase = Phase.WAITING_AP
+                    state.message = "Hotspot went off - switch it back on, the gateway re-arms itself."
+                    updateNotification()
+                    val mode = ApMode.from(prefs.getString(KEY_AP_MODE, ApMode.AUTO.key))
+                    val ssid = prefs.getString(KEY_SSID, DEFAULT_SSID) ?: DEFAULT_SSID
+                    val pass = prefs.getString(KEY_PASS, DEFAULT_PASS) ?: DEFAULT_PASS
+                    val pin = prefs.getString(KEY_LAN_IF, null)?.trim()?.takeIf { it.isNotEmpty() }
+                    val back = waitForApOrInterface(mode, ssid, pass, pin) ?: return false
+                    applyHandle(launcher.current())
+                    withContext(Dispatchers.IO) { launcher.waitForAddress(back, ADDRESS_WAIT_MS) { log(it) } }
+                    if (!configureGateway(back)) return false
+                    return true
+                }
+            }
+        }
+
         if (lan == null) {
-            log("watchdog: LAN interface ${state.lanIf ?: "?"} disappeared")
-            // Our own reservation/group may have been taken away by the system.
+            log("watchdog: LAN interface ${state.lanIf ?: "?"} disappeared (legacy check)")
             if (launcher.current()?.interfaceName == state.lanIf) launcher.noteSystemTookTheAp { log(it) }
             state.phase = Phase.WAITING_AP
             state.message = "Hotspot went off - switch it back on, the gateway re-arms itself."
@@ -400,8 +517,6 @@ class HotspotService : android.app.Service() {
 
         // Do NOT treat "address is not 10.66.0.1" as drift. Forcing that address
         // back every few seconds is what left clients looping on "Obtaining IP".
-        // Adopt whatever is on the interface, and let keepalive heal DHCP
-        // without flushing it.
         val plan = RootShell.readLanPlan()
         val addrs = RootShell.lanAddresses(lan)
         val gateway = plan?.gateway
@@ -424,6 +539,18 @@ class HotspotService : android.app.Service() {
 
         voucherManager.sweepExpired()
         refreshStats()
+
+        // Usage monitoring every tick (Phase 11)
+        try {
+            val usageStats = usageMonitor.collectUsage(lan)
+            usageMonitor.updateDatabase(usageStats)
+            // Check data limits every 3 ticks to avoid heavy DB work
+            if (monitorTicks % 3 == 0) {
+                usageMonitor.checkAndEnforceLimits(billingManager)
+            }
+        } catch (e: Throwable) {
+            AppLog.w(AppLog.TAG_NET, "usage monitor failed ${e.message}")
+        }
 
         // The deep health check is expensive (a dozen shell commands and an HTTP
         // probe), so it runs every DEEP_CHECK_EVERY_TICKS passes, not every one.
@@ -622,8 +749,31 @@ class HotspotService : android.app.Service() {
         portal = null
         portalGateway = null
         state.portalRunning = false
-        try { RootShell.stopBandwidth() } catch (e: Exception) { /* nothing to stop */ }
-        try { RootShell.stopNetwork() } catch (e: Exception) { /* nothing to stop */ }
+
+        // Use NetworkController STOP for clean shutdown
+        try {
+            networkController.stop(currentApHandle) { log(it) }
+        } catch (e: Throwable) {
+            AppLog.w(AppLog.TAG_SERVICE, "networkController stop failed ${e.message}")
+            // Fallback to old method
+            try { RootShell.stopBandwidth() } catch (e2: Exception) { /* nothing to stop */ }
+            try { RootShell.stopNetwork() } catch (e2: Exception) { /* nothing to stop */ }
+        }
+
+        currentApHandle?.close { log(it) }
+        currentApHandle = null
+
+        // Close hotspot session
+        currentHotspotSessionId?.let { id ->
+            try {
+                db.hotspotSessionDao().close(id, System.currentTimeMillis(), "STOPPED", 0)
+                log("hotspot session $id closed")
+            } catch (e: Throwable) {
+                AppLog.w(AppLog.TAG_SERVICE, "session close failed ${e.message}")
+            }
+            currentHotspotSessionId = null
+        }
+
         launcher.release { log(it) }
         SoftApController.stopAp { log(it) }
         state.reset()
