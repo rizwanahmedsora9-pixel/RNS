@@ -200,10 +200,11 @@ rate limit on `/redeem`.
 
 _Regenerated automatically by `.github/workflows/readme.yml` — edit anything outside the markers instead._
 
-**1** open · **9** merged · **0** closed without merging · updated 2026-09-24 09:15 UTC
+**2** open · **9** merged · **0** closed without merging · updated 2026-09-24 10:39 UTC
 
 | PR | Title | Author | Branch | State | Updated |
 | --- | --- | --- | --- | --- | --- |
+[#11](https://github.com/rizwanahmedsora9-pixel/RNS/pull/11) | Hotspot: only adopt interfaces that are really beaconing + one dark console | @arena-ai-coding-agent[bot] | `arena/01a0d2cc-rns` | 🟢 open | 2026-09-24
 [#10](https://github.com/rizwanahmedsora9-pixel/RNS/pull/10) | Hotspot: kill root-shell contention — fast start, clean stop, verified leftovers | @arena-ai-coding-agent[bot] | `arena/01a0d27b-rns` | 🟣 merged | 2026-09-24
 [#9](https://github.com/rizwanahmedsora9-pixel/RNS/pull/9) | One control surface, one method: idle launch, clean P2P, one-tap join | @arena-ai-coding-agent[bot] | `arena/01a0d1e2-rns` | 🟢 open | 2026-09-24
 [#8](https://github.com/rizwanahmedsora9-pixel/RNS/pull/8) | Start the Hot 8 hotspot as root so the gateway leaves WAITING_AP | @arena-ai-coding-agent[bot] | `arena/01a0d1b5-rns` | 🟣 merged | 2026-09-24
