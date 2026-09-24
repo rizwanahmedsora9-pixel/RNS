@@ -1,6 +1,5 @@
 package com.hotspot.billing.debug
 
-import android.os.Process
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.concurrent.atomic.AtomicBoolean
@@ -208,7 +207,7 @@ object LogcatWatcher {
             "su -c \"logcat $spec\""
         } else {
             // No root: Android only returns this app's own lines.
-            "logcat -v threadtime --pid=${Process.myPid()}"
+            "logcat -v threadtime --pid=${android.os.Process.myPid()}"
         }
     }
 
