@@ -14,4 +14,19 @@
     <string name="btn_detect">Detect</string>
     <string name="btn_apply">Save &amp; restart hotspot</string>
     <string name="btn_stop_all">Stop everything</string>
+    <string name="btn_debugger">Open debugger</string>
+    <string name="btn_copy_log">Copy log</string>
+    <string name="btn_permissions">Grant WiFi-sharing permissions</string>
+
+    <string name="ap_mode_help">NetShare-style modes create the customer network while the phone
+        stays connected to its own WiFi, so no hotspot toggle is needed - the phone receives
+        internet on one interface and serves customers on another. They need Location permission
+        and Location switched ON (Android refuses to create any WiFi network otherwise).
+        \"Automatic\" tries: existing hotspot, system hotspot command (Android 12+), local-only
+        hotspot, WiFi Direct, root hostapd - and logs every attempt with the reason it failed.</string>
+
+    <string name="perm_rationale">Android only lets an app create a WiFi network (hotspot,
+        local-only hotspot or WiFi Direct group) when it has location permission - and Location
+        must also be switched on in the system settings. Without them every NetShare-style mode
+        fails, and the debugger will report the reason.</string>
 </resources>

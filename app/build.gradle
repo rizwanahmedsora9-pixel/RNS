@@ -87,11 +87,11 @@ android {
 /*
  * scripts/ is the single source of truth for the root shell layer; the copies
  * under src/main/assets are generated here so the two can never drift. Plain
- * file IO rather than a Copy spec - two small files, nothing to mis-configure.
+ * file IO rather than a Copy spec - three small files, nothing to mis-configure.
  */
 def scriptSrc = rootProject.file('scripts')
 def scriptDst = file('src/main/assets')
-def scriptNames = ['setup_network.sh', 'bandwidth_control.sh']
+def scriptNames = ['setup_network.sh', 'bandwidth_control.sh', 'netshare_ap.sh']
 
 tasks.register('syncShellScripts') {
     group = 'build'

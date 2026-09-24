@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Where DebugExport may write the .txt reports it shares. Both paths are
+  app-private, so no storage permission is needed on any Android version.
+-->
+<paths>
+    <external-files-path
+        name="debug-external"
+        path="." />
+    <files-path
+        name="debug-internal"
+        path="." />
+</paths>

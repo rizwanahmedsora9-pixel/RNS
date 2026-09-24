@@ -17,6 +17,7 @@ import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.RadioGroup
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -28,6 +29,10 @@ import com.hotspot.billing.db.DeviceProfile
 import com.hotspot.billing.db.UserSession
 import com.hotspot.billing.db.Voucher
 import com.hotspot.billing.db.VoucherStatus
+import com.hotspot.billing.debug.AppLog
+import com.hotspot.billing.debug.DebugExport
+import com.hotspot.billing.debug.LogFormat
+import com.hotspot.billing.net.ApMode
 import com.hotspot.billing.net.LeaseParser
 import com.hotspot.billing.net.SoftApController
 import com.hotspot.billing.net.VoucherManager
@@ -73,6 +78,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var dashVouchers: TextView
     private lateinit var dashHint: TextView
     private lateinit var dashLog: TextView
+    private lateinit var dashApKind: TextView
+    private lateinit var dashApSsid: TextView
+    private lateinit var dashFindings: TextView
 
     // Vouchers tab
     private lateinit var etPlan: EditText
@@ -88,6 +96,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var etWan: EditText
     private lateinit var etLan: EditText
     private lateinit var setEnv: TextView
+    private lateinit var apModeGroup: RadioGroup
+    private val modeButtons = LinkedHashMap<ApMode, Int>()
 
     private lateinit var voucherAdapter: VoucherAdapter
     private lateinit var clientAdapter: ClientAdapter
@@ -137,6 +147,7 @@ class MainActivity : AppCompatActivity() {
         wireSettings()
         loadSettingsIntoFields()
         requestNotificationPermissionIfNeeded()
+        if (!hasWifiSharePermissions()) requestWifiSharePermissions()
 
         // The gateway starts with the app and survives it being swiped away.
         startForegroundService(
@@ -202,6 +213,9 @@ class MainActivity : AppCompatActivity() {
         dashVouchers = findViewById(R.id.dash_vouchers)
         dashHint = findViewById(R.id.dash_hint)
         dashLog = findViewById(R.id.dash_log)
+        dashApKind = findViewById(R.id.dash_ap_kind)
+        dashApSsid = findViewById(R.id.dash_ap_ssid)
+        dashFindings = findViewById(R.id.dash_findings)
 
         findViewById<Button>(R.id.btn_start).setOnClickListener {
             withService { it.startSequence() }
@@ -210,6 +224,43 @@ class MainActivity : AppCompatActivity() {
             withService { it.stopSequence() }
         }
         findViewById<Button>(R.id.btn_open_tether).setOnClickListener { openTetherSettings() }
+        findViewById<Button>(R.id.btn_debugger).setOnClickListener { openDebugger() }
+        findViewById<Button>(R.id.btn_copy_log).setOnClickListener { copyWholeLog() }
+    }
+
+    private fun openDebugger() {
+        AppLog.i(AppLog.TAG_UI, "opening the debugger from the dashboard")
+        startActivity(DebugActivity.intent(this))
+    }
+
+    /** One tap to get the whole event log onto the clipboard. */
+    private fun copyWholeLog() {
+        scope.launch {
+            val text = withContext(Dispatchers.IO) {
+                buildString {
+                    append("=== RNS hotspot gateway - event log ===\n")
+                    append("exported : ").append(LogFormat.timestamp(System.currentTimeMillis())).append('\n')
+                    append("device   : ").append(android.os.Build.MANUFACTURER).append(' ')
+                        .append(android.os.Build.MODEL).append(" / Android ")
+                        .append(android.os.Build.VERSION.RELEASE).append('\n')
+                    svc?.snapshot()?.let { snap ->
+                        append("phase    : ").append(snap.phase).append('\n')
+                        append("ap       : ").append(snap.apKind ?: "-")
+                            .append(" (mode ").append(snap.apMode ?: "-").append(")\n")
+                        append("ssid     : ").append(snap.apSsid ?: "-")
+                            .append(" password: ").append(snap.apPassword ?: "-").append('\n')
+                        append("lan/wan  : ").append(snap.lanIf ?: "-").append(" / ")
+                            .append(snap.wanIf ?: "-").append('\n')
+                        append("gateway  : ").append(snap.gatewayIp ?: "-")
+                            .append(" dhcp=").append(snap.dhcpOwner ?: "-").append('\n')
+                    }
+                    append("---- log ----\n")
+                    append(AppLog.text(limit = 4_000))
+                }
+            }
+            val chars = DebugExport.copyToClipboard(this@MainActivity, text)
+            toast("Copied $chars characters - paste it into the chat")
+        }
     }
 
     private fun renderDashboard() {
@@ -233,6 +284,27 @@ class MainActivity : AppCompatActivity() {
             HotspotService.Phase.STOPPED -> "stopped"
             HotspotService.Phase.ERROR -> "error"
         }
+
+        dashApKind.text = state.apKind ?: (state.apMode?.let { "waiting ($it)" } ?: "-")
+        dashApSsid.text = when {
+            state.apSsid == null -> "-"
+            state.apPassword == null -> state.apSsid ?: "-"
+            else -> "${state.apSsid} / ${state.apPassword}"
+        }
+        dashFindings.text = when {
+            state.findings.isEmpty() -> if (state.lastHealthCheck == null) "not checked yet" else "healthy"
+            else -> state.findings.joinToString(" · ") { it.code }
+        }
+        dashFindings.setTextColor(
+            ContextCompat.getColor(
+                this,
+                if (state.findings.any { it.level.priority >= com.hotspot.billing.debug.LogLevel.WARN.priority }) {
+                    R.color.amber
+                } else {
+                    R.color.textPrimary
+                }
+            )
+        )
 
         dashWan.text = state.wanIf ?: "-"
         dashLan.text = state.lanIf ?: "-"
@@ -478,6 +550,15 @@ class MainActivity : AppCompatActivity() {
         etLan = findViewById(R.id.set_lan)
         setEnv = findViewById(R.id.set_env)
 
+        apModeGroup = findViewById(R.id.set_ap_mode)
+        modeButtons.clear()
+        modeButtons[ApMode.AUTO] = R.id.mode_auto
+        modeButtons[ApMode.NETSHARE] = R.id.mode_netshare
+        modeButtons[ApMode.LOCAL_ONLY] = R.id.mode_localonly
+        modeButtons[ApMode.SYSTEM] = R.id.mode_system
+        modeButtons[ApMode.ROOT_AP] = R.id.mode_rootap
+        modeButtons[ApMode.MANUAL] = R.id.mode_manual
+
         findViewById<Button>(R.id.btn_detect).setOnClickListener {
             scope.launch {
                 val detected = withContext(Dispatchers.IO) {
@@ -498,27 +579,116 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<Button>(R.id.btn_apply).setOnClickListener {
+            val mode = selectedApMode()
             prefs.edit()
                 .putString(HotspotService.KEY_SSID, etSsid.text.toString().trim())
                 .putString(HotspotService.KEY_PASS, etPass.text.toString())
                 .putString(HotspotService.KEY_WAN_IF, etWan.text.toString().trim())
                 .putString(HotspotService.KEY_LAN_IF, etLan.text.toString().trim())
+                .putString(HotspotService.KEY_AP_MODE, mode.key)
                 .apply()
-            toast("Saved - restarting the hotspot")
+            AppLog.i(AppLog.TAG_UI, "settings saved - AP mode ${mode.label}, restarting the gateway")
+            if (mode != ApMode.SYSTEM && mode != ApMode.MANUAL && !hasWifiSharePermissions()) {
+                // Every no-toggle method needs these; asking after saving means the
+                // restart that follows can actually succeed.
+                requestWifiSharePermissions()
+            }
+            toast("Saved - restarting with \"${mode.label}\"")
             withService { it.restart() }
         }
 
         findViewById<Button>(R.id.btn_tether).setOnClickListener { openTetherSettings() }
+        findViewById<Button>(R.id.btn_debug_settings).setOnClickListener { openDebugger() }
+        findViewById<Button>(R.id.btn_permissions).setOnClickListener {
+            if (hasWifiSharePermissions()) {
+                toast("Permissions already granted. If an AP still fails, switch Location ON " +
+                    "in the system settings, then open the debugger for the reason.")
+            } else {
+                requestWifiSharePermissions()
+            }
+        }
         findViewById<Button>(R.id.btn_stop_all).setOnClickListener {
             withService { it.stopSequence() }
         }
     }
+
+    private fun selectedApMode(): ApMode =
+        modeButtons.entries.firstOrNull { it.value == apModeGroup.checkedRadioButtonId }?.key
+            ?: ApMode.AUTO
 
     private fun loadSettingsIntoFields() {
         etSsid.setText(prefs.getString(HotspotService.KEY_SSID, HotspotService.DEFAULT_SSID))
         etPass.setText(prefs.getString(HotspotService.KEY_PASS, HotspotService.DEFAULT_PASS))
         etWan.setText(prefs.getString(HotspotService.KEY_WAN_IF, ""))
         etLan.setText(prefs.getString(HotspotService.KEY_LAN_IF, ""))
+        val mode = ApMode.from(prefs.getString(HotspotService.KEY_AP_MODE, ApMode.AUTO.key))
+        modeButtons[mode]?.let { apModeGroup.check(it) }
+    }
+
+    // ------------------------------------------------------- WiFi-sharing permissions
+
+    /**
+     * Location (API 26-32) / NEARBY_WIFI_DEVICES (API 33+) are not optional for
+     * NetShare-style sharing: without them the framework refuses to create a
+     * local-only hotspot or a WiFi Direct group and reports a generic error.
+     */
+    private fun hasWifiSharePermissions(): Boolean {
+        val needed = wifiSharePermissions()
+        return needed.all {
+            checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    private fun wifiSharePermissions(): Array<String> =
+        if (Build.VERSION.SDK_INT >= 33) {
+            arrayOf(
+                android.Manifest.permission.NEARBY_WIFI_DEVICES,
+                android.Manifest.permission.ACCESS_FINE_LOCATION
+            )
+        } else {
+            arrayOf(
+                android.Manifest.permission.ACCESS_FINE_LOCATION,
+                android.Manifest.permission.ACCESS_COARSE_LOCATION
+            )
+        }
+
+    private fun requestWifiSharePermissions() {
+        val missing = wifiSharePermissions().filter {
+            checkSelfPermission(it) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isEmpty()) {
+            toast("All WiFi-sharing permissions are granted")
+            return
+        }
+        AppLog.i(AppLog.TAG_UI, "requesting permissions: ${missing.joinToString()}")
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Permissions needed to share WiFi")
+            .setMessage(R.string.perm_rationale)
+            .setPositiveButton("Ask now") { d, _ ->
+                d.dismiss()
+                requestPermissions(missing.toTypedArray(), REQ_WIFI_SHARE)
+            }
+            .setNegativeButton("Later", null)
+            .show()
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQ_WIFI_SHARE) return
+        val granted = permissions.mapIndexed { index, permission ->
+            permission.substringAfterLast('.') to
+                (grantResults.getOrNull(index) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+        }
+        AppLog.i(AppLog.TAG_UI, "permission result: $granted")
+        val denied = granted.filterNot { it.second }.map { it.first }
+        toast(
+            if (denied.isEmpty()) "Permissions granted - NetShare-style sharing can now work"
+            else "Denied: ${denied.joinToString()}. The system hotspot toggle still works without them."
+        )
     }
 
     private fun openTetherSettings() {
@@ -636,5 +806,9 @@ class MainActivity : AppCompatActivity() {
         ) {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 100)
         }
+    }
+
+    companion object {
+        private const val REQ_WIFI_SHARE = 101
     }
 }

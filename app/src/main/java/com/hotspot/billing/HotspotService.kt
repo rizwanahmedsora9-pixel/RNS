@@ -4,19 +4,37 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
-import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.NetworkInfo
+import android.net.wifi.p2p.WifiP2pManager
 import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.hotspot.billing.db.AppDatabase
 import com.hotspot.billing.db.DeviceProfile
-import com.hotspot.billing.net.LanPlan
+import com.hotspot.billing.db.VoucherStatus
+import com.hotspot.billing.debug.AppLog
+import com.hotspot.billing.debug.CrashGuard
+import com.hotspot.billing.debug.Diagnostics
+import com.hotspot.billing.debug.Finding
+import com.hotspot.billing.debug.GatewayHealth
+import com.hotspot.billing.debug.GatewaySnapshot
+import com.hotspot.billing.debug.HealthInput
+import com.hotspot.billing.debug.HttpProbe
+import com.hotspot.billing.debug.LogFormat
+import com.hotspot.billing.debug.LogcatWatcher
+import com.hotspot.billing.net.ApHandle
+import com.hotspot.billing.net.ApLauncher
+import com.hotspot.billing.net.ApMode
 import com.hotspot.billing.net.IpPool
+import com.hotspot.billing.net.LanPlan
 import com.hotspot.billing.net.SoftApController
 import com.hotspot.billing.net.VoucherManager
 import com.hotspot.billing.portal.CaptivePortalServer
@@ -27,20 +45,22 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
- * Owns the entire billing gateway: root lifecycle, AP bring-up, NAT/DHCP/firewall,
- * the captive portal, the voucher expiry sweep and re-apply when the hotspot
- * interface bounces. Runs as a foreground service so swiping the activity away
- * does not kick paying users off the network.
+ * Owns the entire billing gateway: root lifecycle, AP bring-up (including the
+ * NetShare-style paths that need no hotspot toggle), NAT/DHCP/firewall, the
+ * captive portal, the voucher expiry sweep, the watchdog and the debug log.
+ * Runs as a foreground service so swiping the activity away does not kick
+ * paying users off the network.
+ *
+ * Every step is written to [AppLog]: which AP method was tried, what the system
+ * answered, which interface appeared, which address was adopted, which firewall
+ * rule was applied and what the watchdog found afterwards. The debugger screen
+ * turns that into one copyable report.
  */
-class HotspotService : Service() {
+class HotspotService : android.app.Service() {
 
     enum class Phase { STARTING, WAITING_AP, RUNNING, STOPPED, ERROR }
 
@@ -56,6 +76,13 @@ class HotspotService : Service() {
         @Volatile var gatewayIp: String? = null
         @Volatile var dhcpOwner: String? = null
         @Volatile var message = ""
+        @Volatile var apMode: String? = null
+        @Volatile var apKind: String? = null
+        @Volatile var apSsid: String? = null
+        @Volatile var apPassword: String? = null
+        @Volatile var startedAt: String? = null
+        @Volatile var findings: List<Finding> = emptyList()
+        @Volatile var lastHealthCheck: String? = null
 
         fun reset() {
             phase = Phase.STOPPED
@@ -67,6 +94,13 @@ class HotspotService : Service() {
             gatewayIp = null
             dhcpOwner = null
             message = ""
+            apMode = null
+            apKind = null
+            apSsid = null
+            apPassword = null
+            startedAt = null
+            findings = emptyList()
+            lastHealthCheck = null
         }
     }
 
@@ -75,7 +109,7 @@ class HotspotService : Service() {
     }
 
     private val binder = LocalBinder()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CrashGuard.handler())
     private var gatewayJob: Job? = null
 
     val state = GatewayState()
@@ -83,26 +117,34 @@ class HotspotService : Service() {
     private lateinit var db: AppDatabase
     private lateinit var voucherManager: VoucherManager
     private lateinit var prefs: SharedPreferences
+    private lateinit var launcher: ApLauncher
     private var portal: CaptivePortalServer? = null
     private var portalGateway: String? = null
 
-    private val logBuffer = ArrayDeque<String>()
-    private val logLock = Any()
+    /** Codes currently reported by the watchdog, so a finding is logged once. */
+    private val reportedFindings = LinkedHashSet<String>()
+    private var monitorTicks = 0
 
     // ---------------------------------------------------------------- lifecycle
 
     override fun onCreate() {
         super.onCreate()
+        AppLog.init(this)
+        CrashGuard.install(this, appVersionLabel())
         db = AppDatabase.get(this)
         voucherManager = VoucherManager(db)
         prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        launcher = ApLauncher(this)
         createChannel()
+        registerStateReceivers()
         startInForeground()
+        log("service created (Android ${Build.VERSION.RELEASE}, API ${Build.VERSION.SDK_INT}, ${Build.MODEL})")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> stopSequence()
+            ACTION_DIAGNOSE -> scope.launch { runDiagnostics("requested from the notification") }
             else -> startSequence()
         }
         return START_STICKY
@@ -111,7 +153,14 @@ class HotspotService : Service() {
     override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onDestroy() {
+        log("service destroyed")
         gatewayJob?.cancel()
+        try {
+            unregisterReceiver(stateReceiver)
+        } catch (e: Exception) {
+            // never registered / already gone
+        }
+        LogcatWatcher.stop()
         // Best-effort synchronous cleanup; usually already torn down by stopSequence().
         try { portal?.stop() } catch (e: Exception) { /* socket already gone */ }
         try { RootShell.stopBandwidth() } catch (e: Exception) { /* nothing to stop */ }
@@ -144,7 +193,94 @@ class HotspotService : Service() {
         }
     }
 
-    fun dumpLog(): List<String> = synchronized(logLock) { logBuffer.toList() }
+    /** The dashboard's event log: newest last, compact timestamps. */
+    fun dumpLog(): List<String> =
+        AppLog.snapshot(limit = MAX_LOG_LINES, min = AppLog.minLevel())
+            .map { LogFormat.shortLine(it) }
+
+    /** What the gateway looks like right now, for the diagnostic report. */
+    fun snapshot(): GatewaySnapshot = GatewaySnapshot(
+        phase = state.phase.name,
+        rootOk = state.rootOk,
+        lanIf = state.lanIf,
+        wanIf = state.wanIf,
+        gatewayIp = state.gatewayIp,
+        dhcpOwner = state.dhcpOwner,
+        portalRunning = state.portalRunning,
+        onlineClients = state.onlineClients,
+        message = state.message,
+        apKind = state.apKind,
+        apSsid = state.apSsid,
+        apPassword = state.apPassword,
+        apMode = state.apMode,
+        startedAt = state.startedAt
+    )
+
+    fun findings(): List<Finding> = state.findings
+
+    /**
+     * Builds the full copyable report. Blocking - callers must be on IO.
+     * Returns the report text; also logged (truncated) so the debugger shows it
+     * was produced.
+     */
+    fun buildReport(): String {
+        val report = Diagnostics.collect(
+            context = this,
+            snapshot = snapshot(),
+            findings = state.findings,
+            voucherSummary = voucherSummary()
+        )
+        AppLog.i(
+            AppLog.TAG_SERVICE,
+            "diagnostic report built (${report.length} chars) - copy or share it from the debugger"
+        )
+        return report
+    }
+
+    /** Runs a fresh health check on demand (the debugger's "Check now" button). */
+    suspend fun checkNow(): List<Finding> = withContext(Dispatchers.IO) { healthCheck(report = true) }
+
+    /** Re-runs the whole AP strategy on demand ("Try NetShare again"). */
+    fun retryAp() {
+        log("AP retry requested from the UI")
+        gatewayJob?.cancel()
+        gatewayJob = scope.launch { runGateway() }
+    }
+
+    private suspend fun runDiagnostics(reason: String): String = withContext(Dispatchers.IO) {
+        log("collecting a full diagnostic report ($reason)")
+        healthCheck(report = true)
+        buildReport()
+    }
+
+    private fun voucherSummary(): String {
+        return try {
+            val all = db.voucherDao().getAll()
+            val byStatus = all.groupingBy { it.status }.eachCount()
+            buildString {
+                append("total: ").append(all.size).append('\n')
+                for (status in VoucherStatus.values()) {
+                    append(status.name.lowercase()).append(": ")
+                        .append(byStatus[status] ?: 0).append('\n')
+                }
+                append("-- active --\n")
+                val active = all.filter { it.status == VoucherStatus.ACTIVE }
+                if (active.isEmpty()) append("(none)\n")
+                for (v in active.take(40)) {
+                    append(v.code).append(' ')
+                        .append(v.planName).append(" mac=").append(v.boundMac ?: "?")
+                        .append(" ip=").append(v.assignedIp ?: "?")
+                        .append(" class=").append(v.classId ?: "?")
+                        .append(" expires=").append(
+                            v.expiresAt?.let { LogFormat.timestamp(it) } ?: "?"
+                        ).append('\n')
+                }
+                if (active.size > 40) append("... and ${active.size - 40} more\n")
+            }
+        } catch (e: Throwable) {
+            "(could not read the voucher database: ${e.message})"
+        }
+    }
 
     // ---------------------------------------------------------------- gateway logic
 
@@ -152,29 +288,37 @@ class HotspotService : Service() {
         state.reset()
         state.phase = Phase.STARTING
         state.message = "Starting..."
+        state.startedAt = LogFormat.timestamp(System.currentTimeMillis())
         updateNotification()
 
         if (!ensureRoot()) return
 
         log("deploying network scripts")
         deployScripts()
+        startLogcatWatcher()
 
+        val mode = ApMode.from(prefs.getString(KEY_AP_MODE, ApMode.AUTO.key))
         val ssid = prefs.getString(KEY_SSID, DEFAULT_SSID) ?: DEFAULT_SSID
         val pass = prefs.getString(KEY_PASS, DEFAULT_PASS) ?: DEFAULT_PASS
-        SoftApController.startAp(ssid, pass) { log(it) }
+        val pin = prefs.getString(KEY_LAN_IF, null)?.trim()?.takeIf { it.isNotEmpty() }
+        state.apMode = mode.label
 
-        // Give the AP a moment to appear; on Android 9/10 nothing above can start
-        // it programmatically, so we fall through to waiting for a manual toggle.
-        var lan = waitForLanInterface(15_000)
-        if (lan == null) {
+        val handle = withContext(Dispatchers.IO) { launcher.launch(mode, ssid, pass, pin) { log(it) } }
+        applyHandle(handle)
+
+        var discovered = handle?.interfaceName ?: waitForLanInterface(AP_WAIT_MS)
+        if (discovered == null) {
             state.phase = Phase.WAITING_AP
-            state.message = "Hotspot is off. Switch it on from quick settings or press " +
-                "\u201cOpen Android hotspot settings\u201d - the gateway takes over automatically."
-            log("waiting for the hotspot to be switched on")
+            state.message = waitingMessage(mode)
             updateNotification()
-            lan = waitForLanInterface(Long.MAX_VALUE)
-            if (lan == null) return // cancelled
+            discovered = waitForApOrInterface(mode, ssid, pass, pin) ?: return // cancelled
+            applyHandle(launcher.current())
         }
+        val lan = discovered
+
+        // Wait for the address before configuring: assigning 10.66.0.1 a moment
+        // before Android writes its own is what left clients on "Obtaining IP".
+        withContext(Dispatchers.IO) { launcher.waitForAddress(lan, ADDRESS_WAIT_MS) { log(it) } }
 
         if (!configureGateway(lan)) return
 
@@ -185,15 +329,71 @@ class HotspotService : Service() {
         }
     }
 
+    private fun applyHandle(handle: ApHandle?) {
+        state.apKind = handle?.kind?.label
+        state.apSsid = handle?.ssid
+        state.apPassword = handle?.password
+        if (handle != null) {
+            log("network: ${handle.joinInstructions()}")
+        }
+    }
+
+    private fun waitingMessage(mode: ApMode): String = when (mode) {
+        ApMode.MANUAL, ApMode.SYSTEM ->
+            "Hotspot is off. Switch it on from quick settings or press " +
+                "\u201cOpen Android hotspot settings\u201d - the gateway takes over automatically."
+        else ->
+            "No WiFi network could be created yet (see the debugger for the reason). " +
+                "Retrying every ${RETRY_INTERVAL_MS / 1000}s. Switch the Android hotspot on " +
+                "and this gateway takes over immediately."
+    }
+
+    /**
+     * Waits for any AP interface to appear, re-running the chosen strategy every
+     * [RETRY_INTERVAL_MS] so a later fix (Location switched on, WiFi reconnected,
+     * driver ready) is picked up without a restart.
+     */
+    private suspend fun waitForApOrInterface(
+        mode: ApMode,
+        ssid: String,
+        pass: String,
+        pin: String?
+    ): String? {
+        var attempt = 0
+        val started = SystemClock.elapsedRealtime()
+        while (true) {
+            SoftApController.apInterface(pin ?: state.lanIf)?.let { return it }
+            if (SystemClock.elapsedRealtime() - started > RETRY_INTERVAL_MS) {
+                attempt++
+                log("ap: retry #$attempt - trying \"${mode.label}\" again")
+                val handle = withContext(Dispatchers.IO) {
+                    launcher.launch(mode, ssid, pass, pin) { log(it) }
+                }
+                applyHandle(handle)
+                handle?.interfaceName?.let { return it }
+            }
+            delay(POLL_INTERVAL_MS)
+        }
+    }
+
     /** One pass of the watchdog. Returns false when the gateway should stop. */
     private suspend fun monitorOnce(): Boolean {
+        monitorTicks++
         val lan = SoftApController.apInterface(state.lanIf)
         if (lan == null) {
+            log("watchdog: LAN interface ${state.lanIf ?: "?"} disappeared")
+            // Our own reservation/group may have been taken away by the system.
+            if (launcher.current()?.interfaceName == state.lanIf) launcher.noteSystemTookTheAp { log(it) }
             state.phase = Phase.WAITING_AP
             state.message = "Hotspot went off - switch it back on, the gateway re-arms itself."
-            log("LAN interface disappeared - waiting for the hotspot again")
             updateNotification()
-            val back = waitForLanInterface(Long.MAX_VALUE) ?: return false
+            val mode = ApMode.from(prefs.getString(KEY_AP_MODE, ApMode.AUTO.key))
+            val ssid = prefs.getString(KEY_SSID, DEFAULT_SSID) ?: DEFAULT_SSID
+            val pass = prefs.getString(KEY_PASS, DEFAULT_PASS) ?: DEFAULT_PASS
+            val pin = prefs.getString(KEY_LAN_IF, null)?.trim()?.takeIf { it.isNotEmpty() }
+            val back = waitForApOrInterface(mode, ssid, pass, pin) ?: return false
+            applyHandle(launcher.current())
+            withContext(Dispatchers.IO) { launcher.waitForAddress(back, ADDRESS_WAIT_MS) { log(it) } }
             if (!configureGateway(back)) return false
             return true
         }
@@ -224,14 +424,119 @@ class HotspotService : Service() {
 
         voucherManager.sweepExpired()
         refreshStats()
+
+        // The deep health check is expensive (a dozen shell commands and an HTTP
+        // probe), so it runs every DEEP_CHECK_EVERY_TICKS passes, not every one.
+        if (monitorTicks % DEEP_CHECK_EVERY_TICKS == 0) {
+            healthCheck(report = false)
+        }
         updateNotification()
         return true
+    }
+
+    /**
+     * Collects the watchdog's view of the gateway and turns it into findings.
+     * New findings are logged once (with their H-code); recovered ones are logged
+     * once as well, so the log reads as a story instead of a broken record.
+     */
+    private suspend fun healthCheck(report: Boolean): List<Finding> = withContext(Dispatchers.IO) {
+        val lan = state.lanIf
+        val interfaces = try {
+            RootShell.interfaces()
+        } catch (e: Throwable) {
+            emptyList()
+        }
+        val lanExists = lan != null && interfaces.any { it.first == lan }
+        val addresses = if (lan != null && lanExists) {
+            try { RootShell.lanAddresses(lan) } catch (e: Throwable) { emptyList() }
+        } else {
+            emptyList()
+        }
+        val plan = RootShell.readLanPlan()
+        val probe = if (report || state.phase == Phase.RUNNING) {
+            val gw = plan?.gateway ?: state.gatewayIp
+            if (gw != null && state.portalRunning) {
+                HttpProbe.get("http://$gw/generate_204", 3_000).status
+            } else {
+                null
+            }
+        } else {
+            null
+        }
+        val authorized = try {
+            RootShell.run("cat /data/local/tmp/authorized_macs.txt 2>/dev/null", quiet = true)
+                .out.count { it.isNotBlank() }
+        } catch (e: Throwable) {
+            0
+        }
+
+        val input = HealthInput(
+            lanIf = lan,
+            lanInterfaceExists = lanExists,
+            lanAddresses = addresses,
+            expectedGateway = plan?.gateway,
+            ipForwardEnabled = try { RootShell.ipForwardEnabled() } catch (e: Throwable) { null },
+            ourDnsmasqRunning = try { RootShell.isDnsmasqRunning() } catch (e: Throwable) { false },
+            foreignDnsmasqRunning = try { RootShell.isForeignDnsmasqRunning() } catch (e: Throwable) { false },
+            dhcpOwner = plan?.dhcpOwner ?: state.dhcpOwner,
+            portalAlive = portal?.isAlive == true,
+            portalProbeStatus = probe,
+            natJumpFirst = try {
+                RootShell.jumpIsFirst("nat", "PREROUTING", "HS_NAT")
+            } catch (e: Throwable) { null },
+            forwardJumpFirst = try {
+                RootShell.jumpIsFirst("filter", "FORWARD", "HS_FWD")
+            } catch (e: Throwable) { null },
+            wanIf = state.wanIf,
+            defaultRouteIf = try { RootShell.defaultRouteInterface() } catch (e: Throwable) { null },
+            policyRoutingOk = if (lan != null && lanExists) {
+                try { RootShell.policyRoutingOk(lan) } catch (e: Throwable) { null }
+            } else {
+                null
+            },
+            connectedClients = state.onlineClients,
+            authorizedClients = authorized,
+            apKind = state.apKind
+        )
+
+        val findings = GatewayHealth.evaluate(input)
+        state.findings = findings
+        state.lastHealthCheck = LogFormat.clock(System.currentTimeMillis())
+
+        val codes = findings.map { "${it.code}:${it.problem.hashCode()}" }.toSet()
+        for (finding in findings) {
+            val key = "${finding.code}:${finding.problem.hashCode()}"
+            if (reportedFindings.add(key)) {
+                AppLog.log(finding.level, AppLog.TAG_WATCHDOG, finding.format())
+            }
+        }
+        val gone = reportedFindings.filter { it !in codes }
+        for (key in gone) {
+            reportedFindings.remove(key)
+            AppLog.i(AppLog.TAG_WATCHDOG, "${key.substringBefore(':')} recovered")
+        }
+
+        val headline = GatewayHealth.headline(findings)
+        if (headline != null && state.phase == Phase.RUNNING) {
+            state.message = headline
+        }
+        if (report) {
+            log(
+                "health check: ${if (findings.isEmpty()) "no problems found"
+                else findings.joinToString { it.code }} " +
+                    "(dnsmasq ours=${input.ourDnsmasqRunning} android=${input.foreignDnsmasqRunning}, " +
+                    "owner=${input.dhcpOwner}, forward=${input.ipForwardEnabled}, " +
+                    "routing=${input.policyRoutingOk}, portal=${input.portalAlive}/probe=${input.portalProbeStatus})"
+            )
+        }
+        findings
     }
 
     private suspend fun ensureRoot(): Boolean = withContext(Dispatchers.IO) {
         val ok = try {
             RootShell.isRootAvailable()
         } catch (e: Exception) {
+            AppLog.e(AppLog.TAG_ROOT, "root check failed", e)
             false
         }
         state.rootOk = ok
@@ -286,11 +591,13 @@ class HotspotService : Service() {
             portal = null
         }
         if (portal == null) {
-            portal = CaptivePortalServer(voucherManager, gateway) { log(it) }
+            portal = CaptivePortalServer(voucherManager, gateway) { AppLog.i(AppLog.TAG_PORTAL, it) }
             try {
                 portal?.start()
+                log("captive portal listening on 0.0.0.0:${CaptivePortalServer.PORT} (gateway $gateway)")
             } catch (e: Exception) {
                 log("captive portal failed to start: ${e.message}")
+                AppLog.e(AppLog.TAG_PORTAL, "portal start failed", e)
             }
             portalGateway = gateway
         }
@@ -300,10 +607,12 @@ class HotspotService : Service() {
     private fun runningMessage(lanIf: String, plan: LanPlan): String {
         val dhcp = when (plan.dhcpOwner) {
             "android" -> "phone DHCP"
+            "ours-dns" -> "phone DHCP + app DNS"
             "failed" -> "DHCP DOWN"
             else -> "app DHCP"
         }
-        return "Running on $lanIf · http://${plan.gateway}/ · $dhcp. " +
+        val via = state.apKind?.let { " via $it" } ?: ""
+        return "Running on $lanIf$via · http://${plan.gateway}/ · $dhcp. " +
             "Stuck on Obtaining IP? Forget the Wi-Fi and rejoin."
     }
 
@@ -315,10 +624,12 @@ class HotspotService : Service() {
         state.portalRunning = false
         try { RootShell.stopBandwidth() } catch (e: Exception) { /* nothing to stop */ }
         try { RootShell.stopNetwork() } catch (e: Exception) { /* nothing to stop */ }
+        launcher.release { log(it) }
         SoftApController.stopAp { log(it) }
         state.reset()
         state.phase = Phase.STOPPED
         state.message = "Stopped"
+        reportedFindings.clear()
         log("gateway stopped")
         updateNotification()
     }
@@ -349,12 +660,20 @@ class HotspotService : Service() {
     }
 
     private fun deployScripts() {
-        for (name in listOf("setup_network.sh", "bandwidth_control.sh")) {
-            val tmpLocal = java.io.File(cacheDir, name)
-            assets.open(name).use { input ->
-                tmpLocal.outputStream().use { output -> input.copyTo(output) }
+        for (name in SCRIPTS) {
+            try {
+                val tmpLocal = java.io.File(cacheDir, name)
+                assets.open(name).use { input ->
+                    tmpLocal.outputStream().use { output -> input.copyTo(output) }
+                }
+                val res = RootShell.run(
+                    "cp ${tmpLocal.absolutePath} $SCRIPT_DIR/$name && chmod 755 $SCRIPT_DIR/$name"
+                )
+                if (!res.isSuccess) log("could not deploy $name: ${res.err.joinToString()}")
+            } catch (e: Throwable) {
+                log("could not deploy $name: ${e.javaClass.simpleName}: ${e.message}")
+                AppLog.e(AppLog.TAG_SERVICE, "deploying $name failed", e)
             }
-            RootShell.run("cp ${tmpLocal.absolutePath} $SCRIPT_DIR/$name && chmod 755 $SCRIPT_DIR/$name")
         }
     }
 
@@ -368,6 +687,7 @@ class HotspotService : Service() {
             val existing = dao.findByMac(lease.mac)
             if (existing == null) {
                 dao.upsert(DeviceProfile(mac = lease.mac, hostname = lease.hostname))
+                log("new device on the LAN: ${lease.mac} ${lease.hostname.ifBlank { "(no hostname)" }}")
             } else if (existing.hostname != lease.hostname || now - existing.lastSeen > DEVICE_SEEN_UPDATE_MS) {
                 val hostname = lease.hostname.ifBlank { existing.hostname }
                 dao.upsert(existing.copy(hostname = hostname, lastSeen = now))
@@ -375,16 +695,114 @@ class HotspotService : Service() {
         }
     }
 
+    // ---------------------------------------------------------------- system state receivers
+
+    /**
+     * Logs what the system does to WiFi/the AP while we run, and re-arms the
+     * gateway when a hotspot interface appears or disappears. Everything here is
+     * diagnostic first: a state change that we only learn about from logcat is a
+     * state change we cannot react to.
+     */
+    private val stateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val action = intent?.action ?: return
+            when (action) {
+                AP_STATE_ACTION -> {
+                    val extra = intent.getIntExtra(EXTRA_AP_STATE, -1)
+                    log("system broadcast: hotspot state changed -> ${describeApState(extra)}")
+                }
+                android.net.wifi.WifiManager.WIFI_STATE_CHANGED_ACTION -> {
+                    val extra = intent.getIntExtra(android.net.wifi.WifiManager.EXTRA_WIFI_STATE, -1)
+                    log("system broadcast: WiFi state -> ${describeWifiState(extra)}")
+                }
+                android.net.wifi.WifiManager.NETWORK_STATE_CHANGED_ACTION -> {
+                    @Suppress("DEPRECATION")
+                    val info = intent.getParcelableExtra<NetworkInfo>(
+                        android.net.wifi.WifiManager.EXTRA_NETWORK_INFO
+                    )
+                    log("system broadcast: WiFi network state -> ${info?.state} ${info?.extraInfo ?: ""}")
+                }
+                WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION -> {
+                    @Suppress("DEPRECATION")
+                    val info = intent.getParcelableExtra<NetworkInfo>(
+                        WifiP2pManager.EXTRA_NETWORK_INFO
+                    )
+                    log("system broadcast: WiFi Direct -> ${info?.state} connected=${info?.isConnected}")
+                }
+                WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION -> {
+                    val extra = intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1)
+                    log(
+                        "system broadcast: WiFi Direct ${if (extra == WifiP2pManager.WIFI_P2P_STATE_ENABLED)
+                            "enabled" else "disabled ($extra)"}"
+                    )
+                }
+                ConnectivityManager.CONNECTIVITY_ACTION -> {
+                    @Suppress("DEPRECATION")
+                    val info = intent.getParcelableExtra<NetworkInfo>(
+                        ConnectivityManager.EXTRA_NETWORK_INFO
+                    )
+                    log("system broadcast: connectivity -> ${info?.typeName} ${info?.state}")
+                    // The internet side may have moved (WiFi <-> mobile data).
+                    if (state.phase == Phase.RUNNING) {
+                        val wan = try { RootShell.defaultRouteInterface() } catch (e: Throwable) { null }
+                        if (wan != null && wan != state.wanIf) {
+                            log("internet side changed to $wan - re-applying NAT")
+                            state.lanIf?.let { lan -> scope.launch { configureGateway(lan) } }
+                        }
+                    }
+                }
+                else -> log("system broadcast: $action")
+            }
+        }
+    }
+
+    private fun registerStateReceivers() {
+        val filter = IntentFilter().apply {
+            addAction(AP_STATE_ACTION)
+            addAction(android.net.wifi.WifiManager.WIFI_STATE_CHANGED_ACTION)
+            addAction(android.net.wifi.WifiManager.NETWORK_STATE_CHANGED_ACTION)
+            addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION)
+            addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION)
+            @Suppress("DEPRECATION")
+            addAction(ConnectivityManager.CONNECTIVITY_ACTION)
+        }
+        try {
+            ContextCompat.registerReceiver(
+                this, stateReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+        } catch (e: Throwable) {
+            log("could not register the state receiver: ${e.message}")
+            try {
+                @Suppress("DEPRECATION")
+                registerReceiver(stateReceiver, filter)
+            } catch (e2: Throwable) {
+                AppLog.e(AppLog.TAG_SERVICE, "state receiver registration failed", e2)
+            }
+        }
+    }
+
     // ---------------------------------------------------------------- logging + notification
 
+    /** The one place the gateway writes human-readable events. */
     private fun log(line: String) {
-        val stamp = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
-        synchronized(logLock) {
-            logBuffer.addLast("[$stamp] $line")
-            while (logBuffer.size > MAX_LOG_LINES) logBuffer.removeFirst()
+        AppLog.i(AppLog.TAG_SERVICE, line)
+    }
+
+    private fun startLogcatWatcher() {
+        val mode = LogcatWatcher.Mode.from(prefs.getString(KEY_LOGCAT_MODE, LogcatWatcher.Mode.FILTERED.key))
+        val root = state.rootOk == true
+        if (mode == LogcatWatcher.Mode.OFF) {
+            LogcatWatcher.stop()
+            return
         }
-        android.util.Log.d(TAG, line)
-        updateNotification()
+        LogcatWatcher.start(mode, root)
+        log("logcat watcher: ${mode.label}" + (if (root) " (rooted - full system log)" else " (no root - this app only)"))
+    }
+
+    /** Called by the debugger UI when the operator changes the watcher mode. */
+    fun applyLogcatMode(mode: LogcatWatcher.Mode) {
+        prefs.edit().putString(KEY_LOGCAT_MODE, mode.key).apply()
+        startLogcatWatcher()
     }
 
     private fun createChannel() {
@@ -400,7 +818,7 @@ class HotspotService : Service() {
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(
                 NOTIF_ID, buildNotification(),
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
             )
         } else {
             startForeground(NOTIF_ID, buildNotification())
@@ -408,8 +826,12 @@ class HotspotService : Service() {
     }
 
     private fun updateNotification() {
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(NOTIF_ID, buildNotification())
+        try {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(NOTIF_ID, buildNotification())
+        } catch (e: Throwable) {
+            AppLog.w(AppLog.TAG_SERVICE, "could not update the notification: ${e.message}")
+        }
     }
 
     private fun buildNotification(): Notification {
@@ -418,32 +840,76 @@ class HotspotService : Service() {
             Intent(this, HotspotService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_IMMUTABLE
         )
+        val debugIntent = PendingIntent.getActivity(
+            this, 2,
+            Intent(this, DebugActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val text = state.message.ifBlank { state.phase.name.lowercase() }
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("RNS Hotspot")
-            .setContentText(state.message.ifBlank { state.phase.name.lowercase() })
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
+            .addAction(0, "Debugger", debugIntent)
             .addAction(0, "Stop", stopIntent)
             .build()
     }
 
+    private fun appVersionLabel(): String = try {
+        val info = packageManager.getPackageInfo(packageName, 0)
+        "${info.versionName} (${info.packageName})"
+    } catch (e: Exception) {
+        "unknown version"
+    }
+
+    private fun describeApState(raw: Int): String = when (raw) {
+        0 -> "DISABLING"
+        1 -> "DISABLED"
+        2 -> "ENABLING"
+        3 -> "ENABLED"
+        4 -> "FAILED"
+        else -> "unknown ($raw)"
+    }
+
+    private fun describeWifiState(raw: Int): String = when (raw) {
+        0 -> "DISABLING"
+        1 -> "DISABLED"
+        2 -> "ENABLING"
+        3 -> "ENABLED"
+        4 -> "UNKNOWN"
+        else -> "unknown ($raw)"
+    }
+
     companion object {
-        private const val TAG = "HotspotService"
         const val ACTION_START = "com.hotspot.billing.START"
         const val ACTION_STOP = "com.hotspot.billing.STOP"
+        const val ACTION_DIAGNOSE = "com.hotspot.billing.DIAGNOSE"
 
         const val PREFS = "hotspot_prefs"
         const val KEY_SSID = "ssid"
         const val KEY_PASS = "pass"
         const val KEY_WAN_IF = "wan_if"
         const val KEY_LAN_IF = "lan_if"
+        const val KEY_AP_MODE = "ap_mode"
+        const val KEY_LOGCAT_MODE = "logcat_mode"
         const val DEFAULT_SSID = "RNS-Hotspot"
         const val DEFAULT_PASS = "hotspot123"
 
+        /** Not in the SDK: the string itself has been stable since Android 2. */
+        private const val AP_STATE_ACTION = "android.net.wifi.WIFI_AP_STATE_CHANGED"
+        private const val EXTRA_AP_STATE = "wifi_state"
+
         private const val SCRIPT_DIR = "/data/local/tmp"
+        private val SCRIPTS = listOf("setup_network.sh", "bandwidth_control.sh", "netshare_ap.sh")
         private const val MONITOR_INTERVAL_MS = 8_000L
         private const val POLL_INTERVAL_MS = 2_000L
+        private const val AP_WAIT_MS = 15_000L
+        private const val ADDRESS_WAIT_MS = 12_000L
+        private const val RETRY_INTERVAL_MS = 60_000L
+        private const val DEEP_CHECK_EVERY_TICKS = 8
         private const val MAX_LOG_LINES = 400
         private const val DEVICE_SEEN_UPDATE_MS = 5 * 60_000L
         private const val CHANNEL_ID = "hotspot_status"

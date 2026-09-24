@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The debugger: everything the app knows, as text that can be selected, copied,
+  shared or saved. Deliberately plain (monospace TextView, selectable) rather
+  than a fancy list - the whole point is that it can be pasted into a chat.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/bg">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@color/card"
+        android:padding="12dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Debugger"
+            android:textColor="@color/accent"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/debug_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:textColor="@color/textDim"
+            android:textSize="11sp"
+            android:text="connecting to the gateway service..." />
+    </LinearLayout>
+
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:padding="8dp">
+
+            <Button android:id="@+id/btn_copy_all" style="@style/RowButton"
+                android:layout_marginEnd="6dp" android:text="Copy all" />
+            <Button android:id="@+id/btn_share" style="@style/RowButton"
+                android:layout_marginEnd="6dp" android:text="Share" />
+            <Button android:id="@+id/btn_save_file" style="@style/RowButton"
+                android:layout_marginEnd="6dp" android:text="Save .txt" />
+            <Button android:id="@+id/btn_full_report" style="@style/RowButton"
+                android:layout_marginEnd="6dp" android:text="Full report" />
+            <Button android:id="@+id/btn_check_now" style="@style/RowButton"
+                android:layout_marginEnd="6dp" android:text="Check now" />
+            <Button android:id="@+id/btn_back_to_log" style="@style/RowButton"
+                android:layout_marginEnd="6dp" android:text="Live log" />
+            <Button android:id="@+id/btn_clear_log" style="@style/RowButton"
+                android:text="Clear" />
+        </LinearLayout>
+    </HorizontalScrollView>
+
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="8dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="show:"
+                android:textColor="@color/textDim"
+                android:textSize="11sp"
+                android:layout_marginEnd="4dp"
+                android:layout_gravity="center_vertical" />
+
+            <Button android:id="@+id/btn_level_all" style="@style/RowButton"
+                android:layout_marginEnd="4dp" android:text="All" />
+            <Button android:id="@+id/btn_level_info" style="@style/RowButton"
+                android:layout_marginEnd="4dp" android:text="Info+" />
+            <Button android:id="@+id/btn_level_warn" style="@style/RowButton"
+                android:layout_marginEnd="10dp" android:text="Warn+" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="system log:"
+                android:textColor="@color/textDim"
+                android:textSize="11sp"
+                android:layout_marginEnd="4dp"
+                android:layout_gravity="center_vertical" />
+
+            <Button android:id="@+id/btn_logcat_off" style="@style/RowButton"
+                android:layout_marginEnd="4dp" android:text="Off" />
+            <Button android:id="@+id/btn_logcat_net" style="@style/RowButton"
+                android:layout_marginEnd="4dp" android:text="WiFi" />
+            <Button android:id="@+id/btn_logcat_all" style="@style/RowButton"
+                android:layout_marginEnd="10dp" android:text="Everything" />
+
+            <Button android:id="@+id/btn_tail" style="@style/RowButton"
+                android:text="Pause" />
+        </LinearLayout>
+    </HorizontalScrollView>
+
+    <TextView
+        android:id="@+id/debug_hint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/chip"
+        android:padding="10dp"
+        android:textColor="@color/amber"
+        android:textSize="12sp"
+        android:visibility="gone"
+        android:text="" />
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <ScrollView
+            android:id="@+id/debug_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true">
+
+            <TextView
+                android:id="@+id/debug_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:padding="10dp"
+                android:textColor="@color/textPrimary"
+                android:textIsSelectable="true"
+                android:textSize="10sp"
+                android:typeface="monospace"
+                android:text="(waiting for the gateway service...)" />
+        </ScrollView>
+
+        <ProgressBar
+            android:id="@+id/debug_progress"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:visibility="gone" />
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/debug_footer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/card"
+        android:fontFamily="monospace"
+        android:padding="8dp"
+        android:textColor="@color/textDim"
+        android:textIsSelectable="true"
+        android:textSize="10sp"
+        android:text="" />
+</LinearLayout>

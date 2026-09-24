@@ -94,6 +94,18 @@
                         <TextView android:id="@+id/dash_ap" style="@style/StatValue" android:text="..." />
                     </LinearLayout>
                     <LinearLayout style="@style/StatRow">
+                        <TextView style="@style/StatLabel" android:text="Network created by" />
+                        <TextView android:id="@+id/dash_ap_kind" style="@style/StatValue" android:text="..." />
+                    </LinearLayout>
+                    <LinearLayout style="@style/StatRow">
+                        <TextView style="@style/StatLabel" android:text="Join (SSID / password)" />
+                        <TextView
+                            android:id="@+id/dash_ap_ssid"
+                            style="@style/StatValue"
+                            android:textIsSelectable="true"
+                            android:text="..." />
+                    </LinearLayout>
+                    <LinearLayout style="@style/StatRow">
                         <TextView style="@style/StatLabel" android:text="Internet side (WAN)" />
                         <TextView android:id="@+id/dash_wan" style="@style/StatValue" android:text="..." />
                     </LinearLayout>
@@ -112,6 +124,10 @@
                     <LinearLayout style="@style/StatRow">
                         <TextView style="@style/StatLabel" android:text="Vouchers" />
                         <TextView android:id="@+id/dash_vouchers" style="@style/StatValue" android:text="..." />
+                    </LinearLayout>
+                    <LinearLayout style="@style/StatRow">
+                        <TextView style="@style/StatLabel" android:text="Watchdog" />
+                        <TextView android:id="@+id/dash_findings" style="@style/StatValue" android:text="..." />
                     </LinearLayout>
                 </LinearLayout>
 
@@ -150,6 +166,33 @@
                     android:text="@string/btn_open_tether"
                     android:textColor="@color/textPrimary"
                     android:backgroundTint="@color/accentDark" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="6dp">
+
+                    <Button
+                        android:id="@+id/btn_debugger"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="6dp"
+                        android:text="@string/btn_debugger"
+                        android:textColor="@color/textPrimary"
+                        android:backgroundTint="@color/chip" />
+
+                    <Button
+                        android:id="@+id/btn_copy_log"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="6dp"
+                        android:text="@string/btn_copy_log"
+                        android:textColor="@color/textPrimary"
+                        android:backgroundTint="@color/chip" />
+                </LinearLayout>
 
                 <TextView
                     android:id="@+id/dash_hint"
@@ -401,6 +444,80 @@
 
                 <TextView
                     style="@style/SectionHeader"
+                    android:text="How the WiFi network is created"
+                    android:layout_marginTop="20dp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/ap_mode_help"
+                    android:textColor="@color/textDim"
+                    android:textSize="12sp"
+                    android:paddingBottom="6dp" />
+
+                <RadioGroup
+                    android:id="@+id/set_ap_mode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <RadioButton
+                        android:id="@+id/mode_auto"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:buttonTint="@color/accent"
+                        android:textColor="@color/textPrimary"
+                        android:textSize="13sp"
+                        android:text="Automatic (try everything)" />
+
+                    <RadioButton
+                        android:id="@+id/mode_netshare"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:buttonTint="@color/accent"
+                        android:textColor="@color/textPrimary"
+                        android:textSize="13sp"
+                        android:text="NetShare - WiFi Direct AP (no hotspot toggle)" />
+
+                    <RadioButton
+                        android:id="@+id/mode_localonly"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:buttonTint="@color/accent"
+                        android:textColor="@color/textPrimary"
+                        android:textSize="13sp"
+                        android:text="Local-only hotspot API (no hotspot toggle)" />
+
+                    <RadioButton
+                        android:id="@+id/mode_system"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:buttonTint="@color/accent"
+                        android:textColor="@color/textPrimary"
+                        android:textSize="13sp"
+                        android:text="Android hotspot only (ap0)" />
+
+                    <RadioButton
+                        android:id="@+id/mode_rootap"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:buttonTint="@color/accent"
+                        android:textColor="@color/textPrimary"
+                        android:textSize="13sp"
+                        android:text="Root hostapd (experimental)" />
+
+                    <RadioButton
+                        android:id="@+id/mode_manual"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:buttonTint="@color/accent"
+                        android:textColor="@color/textPrimary"
+                        android:textSize="13sp"
+                        android:text="Do nothing - wait for the hotspot toggle" />
+                </RadioGroup>
+
+                <TextView
+                    style="@style/SectionHeader"
                     android:text="Interfaces (blank = automatic)"
                     android:layout_marginTop="20dp" />
 
@@ -478,6 +595,24 @@
                     android:text="@string/btn_open_tether"
                     android:textColor="@color/textPrimary"
                     android:backgroundTint="@color/accentDark" />
+
+                <Button
+                    android:id="@+id/btn_debug_settings"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/btn_debugger"
+                    android:textColor="@color/textPrimary"
+                    android:backgroundTint="@color/chip" />
+
+                <Button
+                    android:id="@+id/btn_permissions"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/btn_permissions"
+                    android:textColor="@color/textPrimary"
+                    android:backgroundTint="@color/chip" />
 
                 <Button
                     android:id="@+id/btn_stop_all"

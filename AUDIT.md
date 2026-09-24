@@ -177,13 +177,28 @@ none can be validated without the physical phone:
   `cat /sys/class/net/ap0/operstate`, `ip link`. If `ap0` will not come up alongside a
   connected `wlan0`, point `LAN_IF` at a USB-OTG Ethernet adapter (`eth0`/`usb0`) via
   `/data/local/tmp/hotspot.env`.
+  **Update (§9):** still a hardware question, but it is no longer a *blind* one — the
+  debugger's **Full report** now runs all three of those commands (`iw dev`, `dumpsys wifi`,
+  `ip -o link show`) and every framework refusal is decoded
+  (`ERROR_INCOMPATIBLE_MODE` = this radio cannot do STA+AP), so one pasted report answers it.
 - **O7 — No watchdog** for Android's tethering service reconfiguring `ap0` underneath us.
+  **Update (§9): implemented.** `HotspotService.monitorOnce()` runs every 8 s and
+  `GatewayHealth.evaluate()` turns what it finds into coded findings `H1`–`H10`
+  (interface gone, address moved, no DHCP server, IP forwarding off, portal dead, our
+  iptables jump no longer first, internet side changed, policy-routing rule missing,
+  clients without a voucher, portal probe not 200). Each finding carries the fix, is logged
+  once when it appears and once when it recovers, and the ones that are repairable
+  (forwarding, jumps, policy routing, DHCP) are repaired by `setup_network.sh keepalive`.
 - **O8 — Kernel module availability unverified on-device** (`xt_mac`, `sch_htb`, `act_police`).
 - **O9 — Session lifetime is the voucher lifetime** from activation; no pause/resume, and no
   reconciliation between dnsmasq lease expiry and voucher expiry.
 - **O10 — MAC spoofing is inherent** to MAC-based binding: a client that spoofs the bound MAC
   gets the session. Real mitigation is 802.1X or per-user PPPoE, not a bigger iptables ruleset.
 - **O11 — `VoucherManager` has no unit tests** (needs in-memory Room / Robolectric).
+  **Update (§9): still open** — Room needs instrumentation. The logic that *can* be tested
+  on a JVM now is: `LogFormat`, `AppLog`, `ReportBuilder`, `GatewayHealth` (every `H` code),
+  `LogcatWatcher` parsing, `ApConfigText` (hostapd conf, `DIRECT-` name rule, passphrase
+  rule, interface picking) and `LanPlan`.
 
 ## 8. What was verified, and what could not be
 
@@ -209,3 +224,64 @@ none can be validated without the physical phone:
   F1–F5 and the Kotlin edits.
 * Anything requiring the actual Infinix hardware: `ap0` behaviour, module availability,
   dnsmasq binding, and the OS captive-portal sheets.
+
+## 9. Added after the audit: a debugger, and a hotspot that needs no toggle
+
+Two asks from the operator drove this pass, both quoted as they were made:
+
+> "add a debugger error logger watch digger so it sees everything and copyable text so I
+> tell you what exactly it's doing"
+
+> "for hotspot use netshare type tech — no need of hotspot turning on; netshares works on
+> WiFi receiving and sending both"
+
+### 9.1 Everything recorded, one tap to copy it out
+
+`app/src/main/java/com/hotspot/billing/debug/` is the recorder; `DebugActivity` is the
+screen. `RnsApp` (the `Application`) starts both **before** anything else runs, so a crash
+during `MainActivity.onCreate` or service start-up is captured — which is exactly when a
+crash is worth capturing.
+
+| Piece | Behaviour |
+| --- | --- |
+| `AppLog` | 6 000-line ring buffer **and** `files/logs/applog.txt` (rotated), each record `2026-09-23 21:04:11.234 +42s W/watchdog[main]: …` so "the AP came up, then 4 s later dnsmasq died" reads correctly even when NTP moves the clock. Rate-limited at 300 lines/s **and the drop is itself recorded**. |
+| `RootShell.run` | Every privileged command is logged with its exit code, duration, stdout and stderr (clipped at 4 000 chars). "Did that rule get applied?" is never a guess again. |
+| `CrashGuard` | Uncaught exceptions on any thread **and** coroutine failures (`SupervisorJob` swallows them otherwise) go to `last_crash.txt` with the 120 preceding records; the platform handler is still chained so OS behaviour is unchanged. |
+| `LogcatWatcher` | Streams the *system* log (`wpa_supplicant`, `hostapd`, `Tethering`, `IpServer`, `WifiP2pService`, `netd`, `dnsmasq`) into `AppLog`, off / WiFi-tags / everything, restarted up to 5× if the stream dies. Uses `Runtime.exec`, **not** the shared libsu shell — a streaming command there would queue every other root command behind it and the gateway would look hung. |
+| `GatewayHealth` | Pure `HealthInput -> List<Finding>`; codes `H1`–`H10`, each with a plain-words problem and a fix. Worst-first, so the notification/dashboard headline is the one that matters. |
+| `Diagnostics` | The 11-section **Full report**: device, permissions (+ whether Location services are on, the single most common reason a no-toggle AP fails), WiFi/AP/P2P state, interfaces & routing policy, iptables *with packet counters*, both DHCP servers, leases/ARP, shaper, live portal probes from the phone itself, logcat, app log and saved crash. |
+| `DebugExport` | Clipboard (tail-trimmed at 200 KB), share sheet (inline ≤ 100 KB, otherwise attached as a `.txt` via `FileProvider`), and save-to-file. |
+
+### 9.2 NetShare-style sharing: WiFi keeps receiving *and* sending
+
+`ApMode` (`AUTO` / `SYSTEM` / `LOCAL_ONLY` / `NETSHARE` / `ROOT_AP` / `MANUAL`, persisted as
+`ap_mode`, chosen in Settings) plus `ApLauncher`, which tries, in order: adopt an AP that is
+already up → `cmd wifi start-softap` (API 31+) → `WifiManager.startLocalOnlyHotspot` →
+WiFi Direct **group owner** with our own name/passphrase (API 29+, the NetShare technique) →
+root `hostapd` on a driver-created second interface (`scripts/netshare_ap.sh`). Every refusal
+is decoded (`lohsFailure`, `p2pFailure`) and logged, and the launcher retries every 60 s, so a
+later fix (Location switched on, WiFi reconnected, driver ready) is picked up without a
+restart. The phone's own connection stays up throughout — that is the "receiving and sending
+both" part.
+
+Two things make a self-created AP actually route, which Android does not do for either
+mechanism: `setup_network.sh` adds `ip rule add iif <lan> lookup main` (pref 15500/15501) so
+forwarded packets do not hit Android's trailing `unreachable` rule, and `netshare_ap.sh`
+records whether it **created** the interface (`CREATED=1` in `netshare.runtime`) so `stop`
+never deletes a system interface it merely reused.
+
+### 9.3 What is covered by tests, and what is still a phone-shaped question
+
+* `tools/run-script-selftest.sh` — extended to the new paths: policy routing, the DNS-only
+  dnsmasq fallback, `foreign-dhcp`, `procs`, `diag`, and `netshare_ap.sh` (hostapd conf
+  contents, the runtime file, the too-short-passphrase refusal, and that `stop` removes only
+  an interface it created). **All checks pass.**
+* JVM unit tests added: `LogFormatTest`, `AppLogTest`, `ReportBuilderTest`,
+  `GatewayHealthTest` (every `H` code plus "healthy reports nothing"), `LogcatWatcherTest`,
+  `ApConfigTextTest`, and `LanPlan` coverage for the new `LAN_IF_USED` runtime key.
+* **Not verifiable in this sandbox:** the Gradle/AGP compile (no JDK, no SDK, no route to
+  `repo1.maven.org` — CI remains the real compile check), and every hardware question:
+  whether this MediaTek radio does STA+AP concurrency, which of the four methods the Infinix
+  Hot 8 accepts, and whether its `hostapd`/driver lets us add a second interface. Those are
+  now **answerable from one pasted debugger report** instead of by guesswork, which was the
+  point of 9.1.

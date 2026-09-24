@@ -1,6 +1,8 @@
 package com.hotspot.billing.net
 
 import com.hotspot.billing.db.AppDatabase
+import com.hotspot.billing.debug.AppLog
+import com.hotspot.billing.debug.LogFormat
 import com.hotspot.billing.db.UserSession
 import com.hotspot.billing.db.Voucher
 import com.hotspot.billing.db.VoucherStatus
@@ -49,12 +51,24 @@ class VoucherManager(private val db: AppDatabase) {
     fun redeem(code: String, requestingMac: String, currentIp: String? = null): RedeemResult {
         ensureRestored()
 
-        val voucher = db.voucherDao().findByCode(VoucherCodes.normalize(code))
-            ?: return RedeemResult.InvalidCode
+        val normalized = VoucherCodes.normalize(code)
+        val voucher = db.voucherDao().findByCode(normalized)
+        if (voucher == null) {
+            AppLog.w(
+                AppLog.TAG_VOUCHER,
+                "redeem rejected: code \"$normalized\" does not exist (mac $requestingMac, ip ${currentIp ?: "?"})"
+            )
+            return RedeemResult.InvalidCode
+        }
 
         val now = System.currentTimeMillis()
+        AppLog.i(
+            AppLog.TAG_VOUCHER,
+            "redeem \"$normalized\" (${voucher.planName}, ${voucher.status}) from mac $requestingMac" +
+                " ip ${currentIp ?: "?"}"
+        )
 
-        return when (voucher.status) {
+        val result = when (voucher.status) {
             VoucherStatus.UNUSED -> activateFresh(voucher, requestingMac, now, currentIp)
 
             VoucherStatus.ACTIVE -> {
@@ -108,6 +122,12 @@ class VoucherManager(private val db: AppDatabase) {
 
             VoucherStatus.EXPIRED -> RedeemResult.Expired
         }
+        AppLog.i(
+            AppLog.TAG_VOUCHER,
+            "redeem \"$normalized\" -> ${result.javaClass.simpleName}" +
+                if (result is RedeemResult.Success) " ip=${result.ip} expires=${LogFormat.timestamp(result.expiresAt)}" else ""
+        )
+        return result
     }
 
     private fun activateFresh(
@@ -116,9 +136,21 @@ class VoucherManager(private val db: AppDatabase) {
         now: Long,
         currentIp: String?
     ): RedeemResult {
-        val ip = IpPool.allocate() ?: return RedeemResult.PoolExhausted
+        val ip = IpPool.allocate()
+        if (ip == null) {
+            AppLog.e(
+                AppLog.TAG_VOUCHER,
+                "no static IP left in ${IpPool.currentPlan().subnet} - the pool (.10-.49) is exhausted"
+            )
+            return RedeemResult.PoolExhausted
+        }
         val expiresAt = now + voucher.durationMinutes * 60_000L
         val classId = classIdCounter.incrementAndGet()
+        AppLog.i(
+            AppLog.TAG_VOUCHER,
+            "activating \"${voucher.code}\" on mac $mac -> ip $ip, tc class 1:$classId " +
+                "(${voucher.rateKbit}/${voucher.ceilKbit} kbit), expires ${LogFormat.timestamp(expiresAt)}"
+        )
 
         val updated = voucher.copy(
             status = VoucherStatus.ACTIVE,
@@ -168,6 +200,11 @@ class VoucherManager(private val db: AppDatabase) {
     }
 
     private fun expireVoucher(voucher: Voucher) {
+        AppLog.i(
+            AppLog.TAG_VOUCHER,
+            "expiring \"${voucher.code}\" (mac ${voucher.boundMac ?: "-"}, ip ${voucher.assignedIp ?: "-"}) " +
+                "- removing the firewall ACCEPT, the DHCP reservation and the tc class"
+        )
         db.voucherDao().upsert(voucher.copy(status = VoucherStatus.EXPIRED))
         voucher.boundMac?.let {
             RootShell.deauthorizeMac(it)
@@ -194,7 +231,11 @@ class VoucherManager(private val db: AppDatabase) {
     fun sweepExpired() {
         ensureRestored()
         val now = System.currentTimeMillis()
-        db.voucherDao().getExpired(now).forEach { expireVoucher(it) }
+        val expired = db.voucherDao().getExpired(now)
+        if (expired.isNotEmpty()) {
+            AppLog.i(AppLog.TAG_VOUCHER, "sweep: ${expired.size} voucher(s) reached their expiry")
+        }
+        expired.forEach { expireVoucher(it) }
     }
 
     /**
@@ -205,6 +246,7 @@ class VoucherManager(private val db: AppDatabase) {
     fun forceExpire(code: String): Boolean {
         ensureRestored()
         val voucher = db.voucherDao().findByCode(VoucherCodes.normalize(code)) ?: return false
+        AppLog.i(AppLog.TAG_VOUCHER, "operator forced \"$code\" to expire (was ${voucher.status})")
         return when (voucher.status) {
             VoucherStatus.EXPIRED -> true
             VoucherStatus.UNUSED -> {
@@ -223,6 +265,7 @@ class VoucherManager(private val db: AppDatabase) {
     fun deleteVoucher(code: String): Boolean {
         ensureRestored()
         val voucher = db.voucherDao().findByCode(VoucherCodes.normalize(code)) ?: return false
+        AppLog.i(AppLog.TAG_VOUCHER, "operator deleted voucher \"$code\" (was ${voucher.status})")
         if (voucher.status == VoucherStatus.ACTIVE) {
             expireVoucher(voucher)
         }
@@ -239,7 +282,12 @@ class VoucherManager(private val db: AppDatabase) {
     fun reapplyAll() {
         ensureRestored()
         val online = RootShell.connectedClients(null)
-        db.voucherDao().getActive().forEach { voucher ->
+        val active = db.voucherDao().getActive()
+        AppLog.i(
+            AppLog.TAG_VOUCHER,
+            "re-applying ${active.size} active voucher(s) (${online.size} device(s) currently on the LAN)"
+        )
+        active.forEach { voucher ->
             val mac = voucher.boundMac ?: return@forEach
             var ip = voucher.assignedIp
             // A static from a previous subnet (10.66.0.x after we adopted
@@ -284,6 +332,11 @@ class VoucherManager(private val db: AppDatabase) {
             )
             codes.add(code)
         }
+        AppLog.i(
+            AppLog.TAG_VOUCHER,
+            "generated ${codes.size} voucher(s) for \"$planName\" " +
+                "(${durationMinutes}min, ${rateKbit}/${ceilKbit} kbit)"
+        )
         return codes
     }
 
