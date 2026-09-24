@@ -181,10 +181,11 @@ rate limit on `/redeem`.
 
 _Regenerated automatically by `.github/workflows/readme.yml` — edit anything outside the markers instead._
 
-**0** open · **7** merged · **0** closed without merging · updated 2026-09-24 04:17 UTC
+**1** open · **7** merged · **0** closed without merging · updated 2026-09-24 05:24 UTC
 
 | PR | Title | Author | Branch | State | Updated |
 | --- | --- | --- | --- | --- | --- |
+[#8](https://github.com/rizwanahmedsora9-pixel/RNS/pull/8) | Start the Hot 8 hotspot as root so the gateway leaves WAITING_AP | @arena-ai-coding-agent[bot] | `arena/01a0d1b5-rns` | 🟢 open | 2026-09-24
 [#7](https://github.com/rizwanahmedsora9-pixel/RNS/pull/7) | fix(build): repair Kotlin nullability errors blocking APK build | @arena-ai-coding-agent[bot] | `arena/01a0d192-rns` | 🟣 merged | 2026-09-24
 [#6](https://github.com/rizwanahmedsora9-pixel/RNS/pull/6) | CI: preserve Android toolchain and build diagnostics | @arena-ai-coding-agent[bot] | `arena/01a0d189-rns` | 🟣 merged | 2026-09-24
 [#5](https://github.com/rizwanahmedsora9-pixel/RNS/pull/5) | Master rebuild: stable NetShare engine (Phases 0-9) — fix Obtaining IP | @arena-ai-coding-agent[bot] | `arena/01a0d142-rns` | 🟣 merged | 2026-09-24
