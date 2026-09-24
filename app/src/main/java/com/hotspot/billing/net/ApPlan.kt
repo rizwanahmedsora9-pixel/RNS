@@ -22,6 +22,47 @@ object ApPlan {
     }
 
     /**
+     * Interface names that could be the customer-facing side, most likely first.
+     *
+     * Being on this list says nothing about whether an AP is running on it - see
+     * [ApEvidence], which is what decides that. `p2p0` is here because a WiFi
+     * Direct group owner lands on it, and it is *always* up on this MediaTek
+     * build once WiFi is on, which is exactly why the name alone must never be
+     * treated as a running hotspot.
+     */
+    val AP_CANDIDATES = listOf(
+        "ap0", "ap1", "swlan0", "wlan1", "wlan2", "softap0", "uap0", "wlan_ap0",
+        "rnsap0", "p2p0", "p2p-wlan0-0",
+        // USB-OTG ethernet, for the wired phone -> Router2 topology.
+        "usb0", "eth0"
+    )
+
+    /** The step that produced a given kind of AP, so a success can be remembered. */
+    fun stepFor(kind: ApKind?): Step? = when (kind) {
+        ApKind.SYSTEM_HOTSPOT -> Step.SYSTEM
+        ApKind.LOCAL_ONLY -> Step.LOCAL_ONLY
+        ApKind.WIFI_DIRECT -> Step.WIFI_DIRECT
+        ApKind.ROOT_HOSTAPD -> Step.ROOT_HOSTAPD
+        // A toggle the operator flipped is not a method we can repeat.
+        ApKind.MANUAL_TOGGLE, null -> null
+    }
+
+    /**
+     * Moves the method that actually worked on this radio to the front.
+     *
+     * What a given chipset supports is a hardware question the app cannot know
+     * in advance, but it only has to learn it once: on the Infinix Hot 8 the
+     * WiFi Direct group owner is the method that beacons, and trying the system
+     * hotspot first costs 10-20 s of framework calls and teardown every start.
+     * The remembered step leads; the rest keep their relative order, so a radio
+     * that stops supporting it still falls through to everything else.
+     */
+    fun withRememberedFirst(steps: List<Step>, remembered: Step?): List<Step> {
+        if (remembered == null || remembered !in steps) return steps
+        return listOf(remembered) + steps.filter { it != remembered }
+    }
+
+    /**
      * [wanIsWifi] is true when the default route is a WiFi STA. Starting the
      * system hotspot on a single-radio phone disconnects that STA, so it is
      * tried last in repeater mode and first when the uplink is mobile data

@@ -3,7 +3,9 @@ package com.hotspot.billing.net
 import android.content.Context
 import android.net.wifi.WifiConfiguration
 import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.SystemClock
+import com.hotspot.billing.debug.AppLog
 import com.hotspot.billing.util.RootShell
 
 /**
@@ -27,13 +29,166 @@ import com.hotspot.billing.util.RootShell
  */
 object SoftApController {
 
-    /** Interfaces that mean "this is the hotspot / LAN side", in priority order. */
-    private val AP_CANDIDATES = listOf(
-        "ap0", "ap1", "swlan0", "wlan1", "wlan2", "softap0", "uap0", "wlan_ap0",
-        "rnsap0", "p2p0", "p2p-wlan0-0",
-        // USB-OTG ethernet, for the wired phone -> Router2 topology.
-        "usb0", "eth0"
+    /**
+     * Set once from [com.hotspot.billing.net.ApLauncher] / the service so the
+     * framework questions (is the softap ENABLED? do we own a WiFi Direct
+     * group?) can be asked without threading a Context through every call site.
+     */
+    @Volatile private var appContext: Context? = null
+
+    /**
+     * Our own base.apk, from PackageManager - NOT from `pm path` as root.
+     * The 2026-09-24 14:42 export shows `pm path com.hotspot.billing` waiting
+     * 16 s for the root shell twice per start; the answer is a field the app
+     * process already has.
+     */
+    @Volatile private var apkPathCache: String? = null
+
+    fun attach(context: Context) {
+        val app = context.applicationContext
+        appContext = app
+        if (apkPathCache == null) {
+            apkPathCache = try {
+                app.packageManager.getApplicationInfo(app.packageName, 0).sourceDir
+                    ?.takeIf { it.endsWith(".apk") }
+            } catch (e: Throwable) {
+                null
+            }
+        }
+    }
+
+    /** What the framework says about the softap, without root and without the shell. */
+    class FrameworkAp(
+        val state: Int?,
+        val ssid: String?,
+        val passphrase: String?
     )
+
+    /** Reads `getWifiApState()` / the saved AP config by reflection (both are @hide). */
+    fun frameworkAp(log: (String) -> Unit = {}): FrameworkAp {
+        val wifi = appContext?.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+        if (wifi == null) return FrameworkAp(null, null, null)
+        val state = try {
+            val method = wifi.javaClass.methods.firstOrNull {
+                it.name == "getWifiApState" && it.parameterTypes.isEmpty()
+            }
+            (method?.invoke(wifi) as? Int)
+        } catch (e: Throwable) {
+            log("ap[system]: getWifiApState is not callable here (${e.javaClass.simpleName})")
+            null
+        }
+        var ssid: String? = null
+        var pass: String? = null
+        // API 30+: SoftApConfiguration. API 26-29: WifiConfiguration. Both @hide
+        // on the getters we need; both are read best-effort and only ever logged.
+        if (Build.VERSION.SDK_INT >= 30) {
+            try {
+                val method = wifi.javaClass.methods.firstOrNull { it.name == "getSoftApConfiguration" }
+                val config = method?.invoke(wifi)
+                ssid = config?.javaClass?.getMethod("getSsid")?.invoke(config) as? String
+                pass = config?.javaClass?.getMethod("getPassphrase")?.invoke(config) as? String
+            } catch (e: Throwable) {
+                AppLog.d(AppLog.TAG_AP, "ap[system]: getSoftApConfiguration unreadable (${e.javaClass.simpleName})")
+            }
+        }
+        if (ssid.isNullOrBlank()) {
+            try {
+                @Suppress("DEPRECATION")
+                val method = wifi.javaClass.methods.firstOrNull { it.name == "getWifiApConfiguration" }
+                @Suppress("DEPRECATION")
+                val config = method?.invoke(wifi) as? WifiConfiguration
+                ssid = config?.SSID?.trim()?.removeSurrounding("\"")?.takeIf { it.isNotBlank() }
+                pass = config?.preSharedKey
+            } catch (e: Throwable) {
+                AppLog.d(AppLog.TAG_AP, "ap[system]: getWifiApConfiguration unreadable (${e.javaClass.simpleName})")
+            }
+        }
+        return FrameworkAp(state, ssid, pass)
+    }
+
+    /**
+     * The whole radio picture plus the framework's own answers, evaluated by
+     * [ApEvidence]: which interface customers can join right now, and why.
+     *
+     * @return null when the root shell could not answer at all (busy / no root).
+     *   That is "unknown", never "no AP".
+     */
+    fun apDecision(pin: String?, expectStart: Boolean = false): ApDecision? {
+        val shell = try {
+            RootShell.radioSnapshot()
+        } catch (e: Throwable) {
+            AppLog.w(AppLog.TAG_AP, "radio snapshot failed: ${e.javaClass.simpleName}: ${e.message}")
+            null
+        } ?: return null
+
+        val framework = frameworkAp()
+        val share = shareForFacts()
+        // Only ask about a WiFi Direct group when a p2p interface even exists,
+        // and never ask it more than once a second: `requestGroupInfo` can take
+        // up to 2 s to give up on a radio whose Direct stack is off, and this
+        // runs inside the AP wait loop (every 400 ms).
+        val hasP2p = shell.interfaces.any { ApEvidence.isP2pIface(shell, it.name) }
+        val group = if (!hasP2p) {
+            WifiShareAp.GroupFacts(null, null, null, null)
+        } else {
+            val now = System.currentTimeMillis()
+            val cached = groupFactsCache
+            if (cached != null && now - cached.first < GROUP_FACTS_TTL_MS) {
+                cached.second
+            } else {
+                val facts = try {
+                    share?.currentGroup() ?: WifiShareAp.GroupFacts(null, null, null, null)
+                } catch (e: Throwable) {
+                    AppLog.w(
+                        AppLog.TAG_AP,
+                        "WiFi Direct group query failed: ${e.javaClass.simpleName}: ${e.message}"
+                    )
+                    WifiShareAp.GroupFacts(null, null, null, null)
+                }
+                groupFactsCache = now to facts
+                facts
+            }
+        }
+        val full = shell.copy(
+            frameworkApState = framework.state,
+            frameworkApSsid = framework.ssid,
+            frameworkApPassword = framework.passphrase,
+            localOnlyReservation = share?.holdsLocalOnly() == true,
+            p2pGroupOwner = group.isOwner,
+            p2pGroupIface = group.iface,
+            p2pGroupSsid = group.ssid,
+            p2pGroupPassphrase = group.passphrase
+        )
+        return ApEvidence.evaluate(full, pin, expectStart)
+    }
+
+    /** The WiFi Direct helper is per-Context; the object keeps one for the queries. */
+    @Volatile private var factsShare: WifiShareAp? = null
+
+    /** Cached `requestGroupInfo` answer, so the AP wait loop does not queue them. */
+    @Volatile private var groupFactsCache: Pair<Long, WifiShareAp.GroupFacts>? = null
+    private const val GROUP_FACTS_TTL_MS = 1_000L
+
+    /** null when [attach] has not run yet - the decision then rests on the shell alone. */
+    private fun shareForFacts(): WifiShareAp? {
+        factsShare?.let { return it }
+        val context = appContext ?: return null
+        return WifiShareAp(context).also { factsShare = it }
+    }
+
+    /** Logs the decision the way the debugger reads: proof first, rejections after. */
+    fun logDecision(decision: ApDecision?, log: (String) -> Unit) {
+        if (decision == null) {
+            log("ap: the root shell did not answer - cannot tell whether a hotspot is up")
+            return
+        }
+        if (decision.iface != null) {
+            log("ap: ${decision.iface} is a real AP - ${decision.proof}")
+        } else {
+            log("ap: ${decision.proof}")
+        }
+        decision.rejected.forEach { log("ap: not adopted -> $it") }
+    }
 
     /**
      * Tries every programmatic start; returns true if an AP interface came up
@@ -45,6 +200,7 @@ object SoftApController {
      * attempt; the root `app_process` attempt does not need it.
      */
     fun startAp(ssid: String, pass: String, log: (String) -> Unit, app: Context? = null): String? {
+        app?.let { attach(it) }
         val safeSsid = shellSafe(ssid.ifBlank { "RNS-Hotspot" })
         val safePass = shellSafe(pass)
 
@@ -268,6 +424,9 @@ object SoftApController {
     }
 
     private fun apkPath(log: (String) -> Unit): String? {
+        // PackageManager already knows where our own APK lives - no root, no
+        // queueing. `pm path` cost 16 s behind a busy shell on 2026-09-24.
+        apkPathCache?.let { return it }
         val lines = try {
             RootShell.run("pm path com.hotspot.billing", quiet = true).out
         } catch (e: Throwable) {
@@ -276,30 +435,39 @@ object SoftApController {
         }
         val path = lines.map { it.substringAfter("package:").trim() }
             .firstOrNull { it.endsWith("base.apk") || it.endsWith(".apk") }
-        if (path.isNullOrBlank()) log("ap[system]: pm path returned nothing (${lines.joinToString()})")
+        if (path.isNullOrBlank()) {
+            log("ap[system]: pm path returned nothing (${lines.joinToString()})")
+            return null
+        }
+        apkPathCache = path
         return path
     }
 
     /**
-     * Wait until an AP interface is up, and still up [stableMs] later. The Hot 8
-     * beacons and then immediately runs stopSoftAp when tether setup fails; a
-     * one-shot check would report success for an AP that is already gone.
+     * Wait until an AP interface is *evidently beaconing*, and still is
+     * [stableMs] later. The Hot 8 beacons and then immediately runs stopSoftAp
+     * when tether setup fails; a one-shot check would report success for an AP
+     * that is already gone. "Evidently beaconing" is [ApEvidence]'s rule, not
+     * `ip link` - otherwise `p2p0` (always up while WiFi is on) answers the
+     * question before the real AP has even been asked to start.
      */
     private fun awaitAp(log: (String) -> Unit, timeoutMs: Long, stableMs: Long = 1200L): String? {
         val deadline = SystemClock.elapsedRealtime() + timeoutMs
         var seen: String? = null
         var seenAt = 0L
+        var rejectedOnce = false
         while (SystemClock.elapsedRealtime() < deadline) {
-            val iface = try {
-                apInterface(null)
+            val decision = try {
+                apDecision(pin = null, expectStart = true)
             } catch (e: Throwable) {
                 null
             }
+            val iface = decision?.iface
             if (iface != null) {
                 if (seen != iface) {
                     seen = iface
                     seenAt = SystemClock.elapsedRealtime()
-                    log("ap[system]: $iface appeared, confirming it stays up")
+                    log("ap[system]: $iface appeared (${decision.proof}), confirming it stays up")
                 } else if (SystemClock.elapsedRealtime() - seenAt >= stableMs) {
                     log("ap[system]: $iface stayed up")
                     logHostapdLimits(log)
@@ -309,6 +477,11 @@ object SoftApController {
             } else if (seen != null) {
                 log("ap[system]: $seen came up and was torn down (usually dnsmasq could not bind port 53)")
                 seen = null
+            } else if (!rejectedOnce && decision != null) {
+                // Once per attempt: show *why* nothing qualifies, so a radio that
+                // refuses does not read as a silent timeout.
+                rejectedOnce = true
+                logDecision(decision, log)
             }
             try {
                 Thread.sleep(400)
@@ -384,26 +557,22 @@ object SoftApController {
     /**
      * The interface the hotspot currently lives on, or null if no AP is up.
      *
-     * Order: an explicit user pin, then the vendor's declared tethering
-     * interface (getprop wifi.tethering.interface - "ap0" on the Hot 8), then a
-     * scan for well-known AP names that are UP and are not the WAN/uplink side.
+     * Not "any interface whose link is up": [ApEvidence] requires positive
+     * evidence that something is beaconing on it (framework softap ENABLED,
+     * a WiFi Direct group we own, our hostapd, or a wired LAN with link).
+     * `p2p0` on this MediaTek build is UP whenever WiFi is, which is how the
+     * 2026-09-24 14:42 start adopted a dead interface and reported a hotspot
+     * nobody could join.
+     *
+     * @return the proven interface, or null when nothing is beaconing - or when
+     *   the shell is too busy to answer ("unknown"). Callers that care read
+     *   [apDecision] for the reason.
      */
-    fun apInterface(pinned: String?): String? {
-        val present = RootShell.interfaces()
-        val wan = RootShell.defaultRouteInterface()
-
-        pinned?.takeIf { it.isNotEmpty() }?.let { pin ->
-            if (present.any { it.first == pin }) return pin
-        }
-
-        RootShell.getprop("wifi.tethering.interface")?.let { prop ->
-            if (prop != "wlan0" && present.any { it.first == prop }) return prop
-        }
-
-        return present
-            .filter { it.second }
-            .map { it.first }
-            .firstOrNull { name -> name in AP_CANDIDATES && name != wan }
+    fun apInterface(pinned: String?): String? = try {
+        apDecision(pin = pinned.takeIf { it?.isNotEmpty() == true })?.iface
+    } catch (e: Throwable) {
+        AppLog.w(AppLog.TAG_AP, "AP interface check failed: ${e.javaClass.simpleName}: ${e.message}")
+        null
     }
 
     private const val QUICK_WAIT_MS = 2_500L

@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.SystemClock
+import com.hotspot.billing.HotspotService
 import com.hotspot.billing.debug.AppLog
 import com.hotspot.billing.util.RootShell
 
@@ -24,6 +25,12 @@ class ApLauncher(private val context: Context) {
 
     @Volatile private var current: ApHandle? = null
 
+    init {
+        // So every AP question can read the framework state (getWifiApState,
+        // requestGroupInfo) and our own APK path without root.
+        SoftApController.attach(context)
+    }
+
     fun current(): ApHandle? = current
 
     fun isApUp(): Boolean {
@@ -31,12 +38,32 @@ class ApLauncher(private val context: Context) {
         if (handle.isClosed()) return false
         val iface = handle.interfaceName ?: return false
         return try {
-            RootShell.interfaces().any { it.first == iface && it.second }
+            SoftApController.apDecision(pin = iface)?.iface == iface
         } catch (e: Throwable) {
             AppLog.w(AppLog.TAG_AP, "could not verify the AP interface: ${e.message}")
             false
         }
     }
+
+    /** The method that last produced a beaconing AP on *this* radio, or null. */
+    private fun rememberedStep(): ApPlan.Step? =
+        try {
+            prefs().getString(HotspotService.KEY_AP_LAST_METHOD, null)
+                ?.let { stored -> ApPlan.Step.values().firstOrNull { it.name == stored } }
+        } catch (e: Throwable) {
+            null
+        }
+
+    private fun remember(step: ApPlan.Step) {
+        try {
+            prefs().edit().putString(HotspotService.KEY_AP_LAST_METHOD, step.name).apply()
+        } catch (e: Throwable) {
+            AppLog.w(AppLog.TAG_AP, "could not remember the working AP method: ${e.message}")
+        }
+    }
+
+    private fun prefs(): android.content.SharedPreferences =
+        context.getSharedPreferences(HotspotService.PREFS, Context.MODE_PRIVATE)
 
     /**
      * Brings a network up. Returns null only when nothing worked - the caller
@@ -53,7 +80,11 @@ class ApLauncher(private val context: Context) {
         log("ap: mode = ${mode.label}")
 
         // Adopt before touching the radio. Enabling WiFi while a hotspot is
-        // already up is how a working AP gets torn down.
+        // already up is how a working AP gets torn down. Adoption requires
+        // positive evidence that something is beaconing - an interface whose
+        // link is merely UP (p2p0 is always that, once WiFi is on) does not
+        // count, which is what made the 2026-09-24 14:42 start configure a
+        // gateway on a dead interface.
         adoptExisting(pin, log)?.let { handle ->
             current = handle
             log("ap: adopted an AP that was already up (${handle.interfaceName})")
@@ -76,10 +107,15 @@ class ApLauncher(private val context: Context) {
         ensureWifiOn(log)
         val locationOk = ensureLocationReady(log)
 
-        val steps = ApPlan.steps(mode, Build.VERSION.SDK_INT, wanIsWifi)
+        val planned = ApPlan.steps(mode, Build.VERSION.SDK_INT, wanIsWifi)
+        val remembered = rememberedStep()
+        val steps = ApPlan.withRememberedFirst(planned, remembered)
         if (steps.isEmpty()) {
             log("ap: mode is \"${mode.label}\" - not creating anything, waiting for an interface")
             return null
+        }
+        if (remembered != null && steps.first() == remembered && steps != planned) {
+            log("ap: trying ${remembered.label} first - it is what beacons on this radio")
         }
         log("ap: will try ${steps.joinToString(" -> ") { it.label }}")
 
@@ -102,7 +138,16 @@ class ApLauncher(private val context: Context) {
                 null
             }
             if (handle != null && handle.interfaceName != null) {
+                if (!verifyBeaconing(handle, log)) {
+                    log(
+                        "ap: ${step.label} reported ${handle.interfaceName} but nothing is " +
+                            "beaconing on it - releasing it and trying the next method"
+                    )
+                    handle.close(log)
+                    continue
+                }
                 current = handle
+                remember(step)
                 val took = (SystemClock.elapsedRealtime() - startedAt) / 1000
                 log("ap: UP via ${step.label} in ${took}s - ${handle.joinInstructions()}")
                 return handle
@@ -117,6 +162,57 @@ class ApLauncher(private val context: Context) {
         log("ap: nothing could create a network in ${took}s - waiting for a hotspot interface " +
             "(the gateway takes over the moment one appears)")
         return null
+    }
+
+    /**
+     * Asks [ApEvidence] to confirm the handle we were handed really corresponds
+     * to something a customer can join.
+     *
+     * Three outcomes, deliberately distinct: proven (return true), contradicted
+     * (return false - a method that named an interface without beaconing, which
+     * is a silent failure worth logging), and unknown because the root shell is
+     * busy (return true after a couple of retries, and let the watchdog's H1
+     * catch it if nothing comes up - a busy shell must not fail a start that
+     * actually worked).
+     */
+    private fun verifyBeaconing(handle: ApHandle, log: (String) -> Unit): Boolean {
+        val iface = handle.interfaceName ?: return false
+        var unknown = 0
+        repeat(3) { attempt ->
+            val decision = try {
+                // expectStart=true: the framework is often still ENABLING (or has
+                // not written hostapd.conf yet) a beat after reporting success.
+                // Rejecting a real AP here would tear down a working hotspot.
+                SoftApController.apDecision(pin = iface, expectStart = true)
+            } catch (e: Throwable) {
+                AppLog.w(AppLog.TAG_AP, "beacon check threw: ${e.message}")
+                null
+            }
+            if (decision == null) {
+                unknown++
+                if (attempt < 2) {
+                    try {
+                        Thread.sleep(400)
+                    } catch (e: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        return true
+                    }
+                }
+                return@repeat
+            }
+            if (decision.iface == iface) {
+                log("ap: verified - ${decision.proof}")
+                return true
+            }
+            SoftApController.logDecision(decision, log)
+            return false
+        }
+        if (unknown > 0) {
+            log("ap: could not verify $iface (root shell busy) - trusting the report, " +
+                "the watchdog will flag it if nothing beacons")
+            return true
+        }
+        return true
     }
 
     /**
@@ -261,52 +357,61 @@ class ApLauncher(private val context: Context) {
      * Adopts an interface that is already an AP: the operator's own hotspot, a
      * WiFi Direct group we created earlier, or a root hostapd from a previous
      * process (the app was killed but the AP survived).
+     *
+     * [ApEvidence] decides what counts - and what it rejects is the interesting
+     * part, so every rejection is logged with its reason instead of silently
+     * passing to the "nothing is up" path.
      */
     fun adoptExisting(pin: String?, log: (String) -> Unit): ApHandle? {
-        // A root hostapd from a previous run of this app.
-        val netshare = netshareRuntime()
-        val netshareIface = netshare["IFACE"]
-        if (!netshareIface.isNullOrBlank()) {
-            val up = try {
-                RootShell.interfaces().any { it.first == netshareIface && it.second }
-            } catch (e: Throwable) {
-                false
-            }
-            if (up) {
-                log("ap: found a root hostapd still running on $netshareIface")
-                return ApHandle(
-                    kind = ApKind.ROOT_HOSTAPD,
-                    interfaceName = netshareIface,
-                    ssid = netshare["SSID"],
-                    password = netshare["PASS"],
-                    detail = "adopted the root hostapd from a previous run",
-                    onClose = { RootShell.run("sh $NETSHARE stop") }
-                )
-            }
-        }
-
-        val iface = try {
-            SoftApController.apInterface(pin)
+        val decision = try {
+            SoftApController.apDecision(pin)
         } catch (e: Throwable) {
-            AppLog.w(AppLog.TAG_AP, "interface scan failed: ${e.message}")
-            null
-        } ?: return null
-
-        val hostapd = try {
-            share.hostapdConfig()
-        } catch (e: Throwable) {
+            AppLog.w(AppLog.TAG_AP, "adoption check failed: ${e.javaClass.simpleName}: ${e.message}")
             null
         }
-        val kind = if (share.isWifiDirectActive()) ApKind.WIFI_DIRECT else ApKind.SYSTEM_HOTSPOT
-        return ApHandle(
-            kind = kind,
-            interfaceName = iface,
-            ssid = hostapd?.ssid,
-            password = hostapd?.passphrase,
-            detail = "adopted the interface that is already up",
-            leaveAndroidDhcp = kind == ApKind.SYSTEM_HOTSPOT &&
-                ApPlan.frameworkLikelyOwnsDhcp(iface)
-        )
+        if (decision == null) {
+            log("ap: could not ask whether a hotspot is already up (root shell busy) - not adopting")
+            return null
+        }
+        SoftApController.logDecision(decision, log)
+        val iface = decision.iface ?: return null
+        val kind = decision.kind ?: ApKind.SYSTEM_HOTSPOT
+        if (decision.iface == pin) log("ap: adopting the pinned interface $pin")
+
+        return when (kind) {
+            ApKind.ROOT_HOSTAPD -> ApHandle(
+                kind = kind,
+                interfaceName = iface,
+                ssid = decision.ssid,
+                password = decision.password,
+                detail = "adopted the root hostapd from a previous run",
+                onClose = { RootShell.run("sh $NETSHARE stop") }
+            )
+            ApKind.WIFI_DIRECT -> ApHandle(
+                kind = kind,
+                interfaceName = iface,
+                ssid = decision.ssid,
+                password = decision.password,
+                detail = "adopted a WiFi Direct group that is still up",
+                onClose = { share.releaseWifiDirect { } }
+            )
+            ApKind.LOCAL_ONLY -> ApHandle(
+                kind = kind,
+                interfaceName = iface,
+                ssid = decision.ssid,
+                password = decision.password,
+                detail = "adopted the local-only hotspot reservation",
+                onClose = { share.releaseLocalOnly { } }
+            )
+            else -> ApHandle(
+                kind = kind,
+                interfaceName = iface,
+                ssid = decision.ssid,
+                password = decision.password,
+                detail = "adopted the interface that is already up (${decision.proof})",
+                leaveAndroidDhcp = ApPlan.frameworkLikelyOwnsDhcp(iface)
+            )
+        }
     }
 
     /** Whether setup_network.sh must leave Android's tether dnsmasq alone. */

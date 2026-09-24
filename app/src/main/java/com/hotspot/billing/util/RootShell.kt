@@ -4,6 +4,7 @@ import com.hotspot.billing.debug.AppLog
 import com.hotspot.billing.debug.LogLevel
 import com.hotspot.billing.net.LanPlan
 import com.hotspot.billing.net.LeaseParser
+import com.hotspot.billing.net.RadioSnapshot
 import com.topjohnwu.superuser.Shell
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
@@ -67,6 +68,27 @@ object RootShell {
     private const val PROBE_TTL_MS = 2_000L
     private const val LEASE_TTL_MS = 3_000L
     private const val ARP_TTL_MS = 3_000L
+
+    /**
+     * One command for the whole radio picture (links, addresses, default route,
+     * the vendor interface properties, hostapd/dnsmasq processes, hostapd.conf,
+     * our netshare runtime). Deciding whether an AP is *really* up needs all of
+     * it, and it used to be seven separate root commands - each of which could
+     * queue behind a 15 s cleanup.
+     */
+    private const val SNAPSHOT_CMD =
+        "echo @LINK; ip -o link show 2>/dev/null; " +
+            "echo @ADDR; ip -o -4 addr show 2>/dev/null; " +
+            "echo @ROUTE; ip route show default 2>/dev/null; " +
+            "echo @PROP; getprop wifi.tethering.interface; getprop wifi.direct.interface; " +
+            "echo @PROC; { ps -A 2>/dev/null || ps 2>/dev/null; } | grep -E 'hostapd|dnsmasq'; " +
+            "echo @CONF; cat /data/vendor/wifi/hostapd/hostapd_ap0.conf /data/vendor/wifi/hostapd/hostapd.conf /data/misc/wifi/hostapd/hostapd.conf 2>/dev/null; " +
+            "echo @NETSHARE; cat $SCRIPT_DIR/netshare.runtime 2>/dev/null; " +
+            "echo @END"
+
+    private const val SNAPSHOT_TTL_MS = 800L
+    private const val SNAPSHOT_WAIT_MS = 4_000L
+    private const val ENV_TTL_MS = 2_000L
 
     // -------------------------------------------------------------------- input validation
     //
@@ -263,6 +285,8 @@ object RootShell {
         val portalRedirect: Boolean? get() = flag("redirect")
         val ruleIif: Boolean? get() = flag("rule_iif")
         val ruleSubnet: Boolean? get() = flag("rule_subnet")
+        val shaper: Boolean? get() = flag("shaper")
+        val netshare: Boolean? get() = flag("netshare")
         val clients: Int get() = num("leases") ?: 0
         val authorized: Int get() = num("authed") ?: 0
         override fun toString(): String = "probe(${tookMs}ms) ${values.entries.joinToString(" ") { "${it.key}=${it.value}" }}"
@@ -273,6 +297,35 @@ object RootShell {
     @Volatile private var cachedLeasesAt = 0L
     @Volatile private var cachedArp: Map<String, String>? = null
     @Volatile private var cachedArpAt = 0L
+
+    private class SnapshotCache(val value: RadioSnapshot, val atMs: Long)
+
+    @Volatile private var cachedSnapshot: SnapshotCache? = null
+    @Volatile private var cachedEnv: String? = null
+    @Volatile private var cachedEnvAt = 0L
+
+    /**
+     * The radio picture from ONE root command, cached for [SNAPSHOT_TTL_MS].
+     *
+     * @return null when the shell could not answer in time. Callers must read
+     *   that as "unknown" and never as "there is no AP" - a busy shell is not a
+     *   hardware failure.
+     */
+    fun radioSnapshot(fresh: Boolean = false): RadioSnapshot? {
+        val now = System.currentTimeMillis()
+        cachedSnapshot?.let { if (!fresh && now - it.atMs < SNAPSHOT_TTL_MS) return it.value }
+        val outcome = tryRun(SNAPSHOT_CMD, waitMs = SNAPSHOT_WAIT_MS, quiet = true)
+            ?: return cachedSnapshot?.value
+        val parsed = RadioSnapshot.parse(outcome.out)
+        if (parsed.interfaces.isEmpty()) {
+            // The shell answered but named no interfaces: root was refused, or the
+            // device is mid-boot. Keep the previous answer rather than reporting
+            // "the phone has no interfaces at all".
+            return cachedSnapshot?.value
+        }
+        cachedSnapshot = SnapshotCache(parsed, now)
+        return parsed
+    }
 
     /**
      * @param fresh bypass the cache (the debugger's "Check now", and right after
@@ -344,6 +397,8 @@ object RootShell {
         cachedProbe = null
         cachedLeases = null
         cachedArp = null
+        cachedSnapshot = null
+        cachedEnv = null
     }
 
     /**
@@ -376,6 +431,17 @@ object RootShell {
         val res = run(cmd)
         invalidateCaches()
         return res.isSuccess
+    }
+
+    /**
+     * State files only (stale pidfile / runtime / last-interface). One cheap
+     * command: what a start-up whose probe already said "nothing of ours is
+     * running" needs instead of the full cleanup.
+     */
+    fun purgeState(): Outcome {
+        val res = run("sh $SETUP purge-state", quiet = true)
+        invalidateCaches()
+        return Outcome(res.out, res.err, res.code, 0L)
     }
 
     fun isRootAvailable(): Boolean {
@@ -480,10 +546,20 @@ object RootShell {
         run("sh $SETUP foreign-dhcp", quiet = true).out.any { it.trim() == "yes" }
 
     /** IPv4 address(es) currently on a LAN interface, e.g. ["10.66.0.1/24"]. */
-    fun lanAddresses(lanIf: String): List<String> =
-        run("ip -o -4 addr show dev $lanIf", quiet = true).out.mapNotNull { line ->
+    /**
+     * IPv4 address(es) currently on a LAN interface, e.g. ["10.66.0.1/24"].
+     *
+     * Served from the cached snapshot when it already knows the answer, so the
+     * 250 ms address poll on start does not turn into its own stream of root
+     * commands while the snapshot is still fresh.
+     */
+    fun lanAddresses(lanIf: String): List<String> {
+        if (!lanIf.matches(IFACE_REGEX)) return emptyList()
+        radioSnapshot()?.iface(lanIf)?.addresses?.takeIf { it.isNotEmpty() }?.let { return it }
+        return run("ip -o -4 addr show dev $lanIf", quiet = true).out.mapNotNull { line ->
             Regex("(\\d+\\.\\d+\\.\\d+\\.\\d+/\\d+)").find(line)?.groupValues?.get(1)
         }
+    }
 
     fun initBandwidth(): Shell.Result = run("sh $SHAPER init")
 
@@ -513,19 +589,29 @@ object RootShell {
      * Every link-layer interface that exists right now, as (name, isUp) pairs.
      * Parses `ip -o link show`: "3: ccmni1: <NOARP,UP,LOWER_UP> ...".
      */
-    fun interfaces(): List<Pair<String, Boolean>> =
-        run("ip -o link show", quiet = true).out.mapNotNull { line ->
+    /**
+     * Every link-layer interface that exists right now, as (name, isUp) pairs.
+     * Answered from the cached radio snapshot when possible - this is called by
+     * several callers within the same second and used to be one root command
+     * each time.
+     */
+    fun interfaces(): List<Pair<String, Boolean>> {
+        radioSnapshot()?.let { snap -> return snap.interfaces.map { it.name to it.up } }
+        return run("ip -o link show", quiet = true).out.mapNotNull { line ->
             val name = Regex("^[0-9]+: ([^:@]+)").find(line)?.groupValues?.get(1)?.trim()
                 ?: return@mapNotNull null
             val up = Regex("<[^>]*UP[^>]*>").containsMatchIn(line)
             name to up
         }
+    }
 
     /** The interface that currently holds the default route (the internet side). */
-    fun defaultRouteInterface(): String? =
-        run("ip route show default", quiet = true).out
+    fun defaultRouteInterface(): String? {
+        radioSnapshot()?.defaultRoute?.let { return it }
+        return run("ip route show default", quiet = true).out
             .firstOrNull { it.contains(" dev ") }
             ?.let { Regex("dev (\\S+)").find(it)?.groupValues?.get(1) }
+    }
 
     /** Value of net.ipv4.ip_forward, or null when it could not be read. */
     fun ipForwardEnabled(): Boolean? =
@@ -577,11 +663,26 @@ object RootShell {
         }
         val sb = StringBuilder("rm -f $ENV_FILE; ")
         values.forEach { (k, v) -> sb.append("echo \"$k=$v\" >> $ENV_FILE; ") }
-        return run(sb.toString())
+        val result = run(sb.toString())
+        cachedEnv = null
+        return result
     }
 
-    fun readEnvFile(): String =
-        run("cat $ENV_FILE 2>/dev/null; true", quiet = true).out.joinToString("\n")
-            .ifBlank { "(not written yet)" }
+    /**
+     * hotspot.env for the Settings screen. A *display* read: cached, and it
+     * skips rather than queue when the shell is busy. The 2026-09-24 14:42 log
+     * shows eight of these piling up behind one 16-second command - the UI asked
+     * for it every poll while the service asked for it on its own tick.
+     */
+    fun readEnvFile(): String {
+        val now = System.currentTimeMillis()
+        cachedEnv?.let { if (now - cachedEnvAt < ENV_TTL_MS) return it }
+        val outcome = tryRun("cat $ENV_FILE 2>/dev/null; true", waitMs = POLL_WAIT_MS, quiet = true)
+            ?: return cachedEnv ?: "(state files busy - open the debugger for the live values)"
+        val text = outcome.out.joinToString("\n").ifBlank { "(not written yet)" }
+        cachedEnv = text
+        cachedEnvAt = now
+        return text
+    }
 }
 

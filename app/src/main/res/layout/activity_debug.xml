@@ -14,7 +14,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:background="@color/card"
+        android:background="@drawable/bg_card"
         android:padding="12dp">
 
         <TextView
@@ -160,7 +160,7 @@
         android:id="@+id/debug_footer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/card"
+        android:background="@drawable/bg_card"
         android:fontFamily="monospace"
         android:padding="8dp"
         android:textColor="@color/textDim"

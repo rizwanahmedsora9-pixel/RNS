@@ -55,7 +55,7 @@ workflow artifact — see [CI](#continuous-integration).
 
    | Mode | What it does | Needs the Android hotspot toggle? |
    | --- | --- | --- |
-   | **Automatic** (default) | Turns WiFi on, then tries the method this radio can actually start. Mobile uplink (the Hot 8): system hotspot first, then local-only, WiFi Direct, root hostapd. WiFi uplink: system hotspot last, so it does not disconnect the internet. | no |
+   | **Automatic** (default) | Turns WiFi on, then tries the method this radio can actually start. Mobile uplink (the Hot 8): system hotspot first, then local-only, WiFi Direct, root hostapd. WiFi uplink: system hotspot last, so it does not disconnect the internet. Whichever method actually **beacons** is remembered and tried first next time. | no |
    | **NetShare (WiFi Direct)** | The phone becomes a WiFi Direct **group owner**. Needs WiFi and Location on — while either is off, `createGroup` returns BUSY, which means Direct is disabled, not that another group exists. If Direct still refuses, the system hotspot is tried. | no |
    | **Local-only hotspot** | `WifiManager.startLocalOnlyHotspot()` — an AP the app may create on its own (Android picks the SSID/password; the app reads them back and shows them). | no |
    | **Root hostapd** | `scripts/netshare_ap.sh`: ask the driver for a second interface and run a CLI `hostapd`. The Hot 8 only has the WiFi HAL binary, which is not that program, so this mode falls through to the system hotspot. | no |
@@ -70,6 +70,18 @@ workflow artifact — see [CI](#continuous-integration).
    `SecurityException` instead of a callback. Granting the permission retries
    immediately. The gateway retries every 20 s and takes over the instant an
    interface appears, so flipping the system toggle later still works.
+
+   **Adoption requires evidence, not a link.** An interface only counts as "already
+   the hotspot" when the framework says the softap is `ENABLED`, a WiFi Direct group
+   we own is running (or it carries Android's group-owner address `192.168.49.1`),
+   our own `netshare` hostapd is, or a wired LAN has link. `p2p0` - the WiFi Direct
+   interface - is created and brought **UP as soon as WiFi is on** and stays UP after
+   the group is removed, so a build that adopted it because `ip link` said so went on
+   to assign `10.66.0.1/24` to a dead interface, start dnsmasq on it and report a
+   running hotspot that no phone could see (device log, 2026-09-24 14:42). Every
+   start now logs the proof that was accepted **and** the reason each other candidate
+   was rejected, and the address this app writes itself is removed again by cleanup
+   so it can never be mistaken for evidence twice.
 4. When the hotspot comes up the app **keeps the address Android already assigned** (usually `192.168.43.1`). Replacing that with `10.66.0.1` is what left phones spinning on "Obtaining IP address". DHCP offers are sent as broadcasts, because MediaTek radios drop the unicast offer and the client never finishes DHCP. If Android's own DHCP server comes back and the two would fight, the app steps aside and lets the phone hand out addresses — the sign-in page still appears either way. After installing this update, tell users to **forget the Wi-Fi network and join again once**.
 5. **Vouchers** tab: pick a preset (1 Hour / 3 Hours / 1 Day / 7 Days) or fill in plan name, duration and speeds, then *Generate*. Codes are copyable/shareable straight from the dialog; the list filters by status and each row can be expired or deleted.
 6. **Users** tab: everyone currently on the LAN (online *with* a voucher vs *waiting at the portal*), saved user profiles - a name/phone/note per device MAC, recorded automatically the first time a device is seen - and session history.
@@ -162,8 +174,15 @@ single-device binding, static IP assignment, per-plan shaping in both directions
 captive-portal probes for Android/iOS/Windows, foreground service that survives the
 app being swiped away, auto-restart after reboot, expiry sweep, user profiles
 auto-recorded per device MAC, a watchdog that reports and repairs drift (findings
-`H1`–`H10`), and a [debugger](#debugger) that records every command, callback and
-finding as copyable text.
+`H1`–`H10`), evidence-based hotspot adoption (an interface is never adopted unless
+something is really beaconing on it), and a [debugger](#debugger) that records every
+command, callback and finding as copyable text.
+
+The admin screen is a single dark console: a status hero with a live dot and the
+Start/Stop actions, cards for gateway / join / interfaces, a 30-line event log (the
+debugger keeps the rest), voucher presets and plan builder, users and sessions, and a
+bottom navigation bar. The theme is forced dark so dialogs, inputs and radios match
+the cards instead of coming out light on a dark layout.
 
 Hotspot bring-up: no toggle needed — local-only hotspot, WiFi Direct group owner
 (NetShare-style) or root `hostapd` create the network while the phone's own WiFi stays
@@ -181,10 +200,11 @@ rate limit on `/redeem`.
 
 _Regenerated automatically by `.github/workflows/readme.yml` — edit anything outside the markers instead._
 
-**1** open · **9** merged · **0** closed without merging · updated 2026-09-24 09:15 UTC
+**2** open · **9** merged · **0** closed without merging · updated 2026-09-24 10:51 UTC
 
 | PR | Title | Author | Branch | State | Updated |
 | --- | --- | --- | --- | --- | --- |
+[#11](https://github.com/rizwanahmedsora9-pixel/RNS/pull/11) | Hotspot: only adopt interfaces that are really beaconing + one dark console | @arena-ai-coding-agent[bot] | `arena/01a0d2cc-rns` | 🟢 open | 2026-09-24
 [#10](https://github.com/rizwanahmedsora9-pixel/RNS/pull/10) | Hotspot: kill root-shell contention — fast start, clean stop, verified leftovers | @arena-ai-coding-agent[bot] | `arena/01a0d27b-rns` | 🟣 merged | 2026-09-24
 [#9](https://github.com/rizwanahmedsora9-pixel/RNS/pull/9) | One control surface, one method: idle launch, clean P2P, one-tap join | @arena-ai-coding-agent[bot] | `arena/01a0d1e2-rns` | 🟢 open | 2026-09-24
 [#8](https://github.com/rizwanahmedsora9-pixel/RNS/pull/8) | Start the Hot 8 hotspot as root so the gateway leaves WAITING_AP | @arena-ai-coding-agent[bot] | `arena/01a0d1b5-rns` | 🟣 merged | 2026-09-24

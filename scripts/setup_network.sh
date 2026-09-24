@@ -1207,6 +1207,29 @@ probe() {
     echo "leases=$(grep -c . "$LEASEFILE" 2>/dev/null || echo 0)"
     echo "authed=$(grep -c . "$AUTHORIZED_FILE" 2>/dev/null || echo 0)"
     echo "dhcp_reservations=$(grep -c . "$HOSTS_FILE" 2>/dev/null || echo 0)"
+
+    # The two leftovers iptables/dnsmasq cannot see: the tc shaper (read from its
+    # own state file - `tc qdisc show` would be a second command and the probe
+    # must stay one round-trip) and a root hostapd of ours still running. The app
+    # reads both before deciding whether the 15-second cleanup is needed at
+    # start-up: a phone that has none of this needs one probe, not a teardown.
+    if [ -s "$STATE_DIR/hotspot_tc.state" ]; then echo "shaper=yes"; else echo "shaper=no"; fi
+    if [ -f "$STATE_DIR/netshare_hostapd.pid" ] &&
+            kill -0 "$(cat "$STATE_DIR/netshare_hostapd.pid" 2>/dev/null)" 2>/dev/null; then
+        echo "netshare=yes"
+    else
+        echo "netshare=no"
+    fi
+}
+
+# Drops the state files without touching the network. Cheap (~10 ms), so a
+# start-up whose probe already said "nothing of ours is running" can throw the
+# stale pidfile/runtime away instead of paying for a full cleanup.
+purge_state() {
+    rm -f "$PIDFILE" "$RUNTIME_FILE" "$STATE_DIR/netshare.runtime" \
+        "$STATE_DIR/netshare_hostapd.pid" "$LAST_IF_FILE" \
+        "$STATE_DIR/dnsmasq_hotspot.log.old" 2>/dev/null
+    log "purge-state: stale state files removed"
 }
 
 # Emergency cleaner / EXIT: leave nothing of ours behind, whatever state the
@@ -1252,6 +1275,15 @@ cleanup() {
         # would silently block the NEXT session's DHCP answers (including
         # Android's, which we step aside for).
         unblock_foreign_dhcp
+        # The address WE assign when an interface has none (configure_lan_address
+        # fallback) must not survive us. A leftover 10.66.0.1 on p2p0 makes a dead
+        # interface look like a running hotspot to the next start, which is how the
+        # 2026-09-24 14:42 session adopted p2p0 and configured a gateway on nothing.
+        # Only 10.66.0.1 - never an address the framework or Android wrote.
+        if ip -o -4 addr show dev "$IFACE" 2>/dev/null | grep -q "10\.66\.0\.1/24"; then
+            ip addr del 10.66.0.1/24 dev "$IFACE" 2>/dev/null && \
+                log "cleanup: removed our leftover 10.66.0.1/24 from $IFACE"
+        fi
         LAN_SUBNET="$SUBNET_SAVED"
         LAN_IF="$LAN_IF_SAVED"
     done
@@ -1402,9 +1434,10 @@ case "${1:-}" in
     nat)          nat_only "${2:-}" "${3:-}" "${4:-}" ;;
     probe)        probe "${2:-}" ;;
     cleanup)      cleanup "${2:-}" ;;
+    purge-state)  purge_state ;;
     foreign-dhcp) foreign_dhcp ;;
     free-dns)     free_dns ;;
     procs)        procs ;;
     diag)         diag ;;
-    *) echo "usage: $0 {start|stop|status|keepalive|cleanup [lan_if]|probe [lan_if]|nat <lan_if> <wan_if> <subnet>|diag|route <lan_if> <subnet>|foreign-dhcp|free-dns|procs|authorize <mac> <ip> [cur_ip]|deauthorize <mac>|reserve <mac> <ip>|unreserve <mac>}" ;;
+    *) echo "usage: $0 {start|stop|status|keepalive|cleanup [lan_if]|purge-state|probe [lan_if]|nat <lan_if> <wan_if> <subnet>|diag|route <lan_if> <subnet>|foreign-dhcp|free-dns|procs|authorize <mac> <ip> [cur_ip]|deauthorize <mac>|reserve <mac> <ip>|unreserve <mac>}" ;;
 esac

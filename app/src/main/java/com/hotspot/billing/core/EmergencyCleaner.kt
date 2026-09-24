@@ -1,6 +1,7 @@
 package com.hotspot.billing.core
 
 import com.hotspot.billing.debug.AppLog
+import com.hotspot.billing.net.SoftApController
 import com.hotspot.billing.util.RootShell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -27,9 +28,11 @@ import kotlinx.coroutines.withContext
  * deleted, and it works for interfaces that no longer exist by that name.
  *
  * Order: stop the portal first (it is the only thing that can still accept a
- * client), then run the two slow, independent parts - removing the kernel rules
- * and dropping the AP reservation / P2P group - at the same time, then verify
- * with a single probe and try exactly once more if something survived.
+ * client), then ask ONE probe whether there is anything to remove at all - the
+ * full cleanup takes 15 s on the Hot 8 and ran on *every* start, which is why
+ * the 2026-09-24 14:42 export shows 70 s before the first AP attempt - then
+ * remove the kernel rules and drop the AP reservation in parallel when there is
+ * genuinely something to drop.
  */
 class EmergencyCleaner(
     private val stopPortal: () -> Unit,
@@ -39,9 +42,15 @@ class EmergencyCleaner(
 
     /**
      * @param reason goes into the log, e.g. "EXIT button", "app start", "service destroyed".
+     * @param stopAp false when the gateway is starting up: a hotspot that is
+     *   *already beaconing* is exactly what the next step wants to adopt
+     *   (System hotspot, a live WiFi Direct group, or the operator's own
+     *   toggle), and stopping it - which is what this did on every start -
+     *   means rebuilding it from scratch. The things that actually poison the
+     *   next session (our dnsmasq, our rules, our shaper) are removed either way.
      * @return true when nothing of ours is left behind.
      */
-    suspend fun cleanupEverything(reason: String, lanIf: String? = null): Boolean =
+    suspend fun cleanupEverything(reason: String, lanIf: String? = null, stopAp: Boolean = true): Boolean =
         withContext(Dispatchers.IO) {
             val started = System.currentTimeMillis()
             log("cleanup: everything off ($reason)")
@@ -55,27 +64,67 @@ class EmergencyCleaner(
                 AppLog.w(AppLog.TAG_SERVICE, "cleanup: portal stop failed: ${e.message}")
             }
 
-            // 2. Rules and AP at the same time: `cleanup` is a shell command and
-            //    releasing the P2P group / LOHS reservation is a framework call -
-            //    they do not depend on each other, and this is the part the user
-            //    waits for.
-            val rulesOk = coroutineScope {
-                val rules = async { cleanupRules(lanIf) }
+            // 2. One probe answers "is there anything of ours to remove?". On a
+            //    phone that was stopped cleanly the answer is no, and the whole
+            //    15-second teardown is replaced by dropping the stale state files.
+            val probe = try {
+                RootShell.probe(lanIf, fresh = true)
+            } catch (e: Throwable) {
+                AppLog.w(AppLog.TAG_SERVICE, "cleanup: probe failed: ${e.message}")
+                null
+            }
+            val hasLeftovers = probe == null || probeNeedsCleanup(probe)
+
+            // Starting a session: never tear down a live AP. Stopping it - which
+            // is what this used to do on every start - only means rebuilding what
+            // the next step was about to adopt anyway.
+            val keepRunningAp = !stopAp
+            val runningAp = if (keepRunningAp) {
+                try {
+                    SoftApController.apDecision(null)?.iface
+                } catch (e: Throwable) {
+                    null
+                }
+            } else {
+                null
+            }
+
+            val parts = coroutineScope {
+                val rules = async {
+                    if (hasLeftovers) {
+                        cleanupRules(lanIf)
+                    } else {
+                        purgeStateFiles()
+                    }
+                }
                 val ap = async {
-                    try {
-                        releaseAp()
+                    if (keepRunningAp) {
+                        if (runningAp != null) {
+                            log(
+                                "cleanup: keeping $runningAp - it is beaconing and will be adopted " +
+                                    "(Stop, then Start, to recreate the network from scratch)"
+                            )
+                        } else {
+                            log("cleanup: nothing is beaconing - leaving the radio alone")
+                        }
                         true
-                    } catch (e: Throwable) {
-                        log("cleanup: releasing the AP failed: ${e.javaClass.simpleName}: ${e.message}")
-                        false
+                    } else {
+                        try {
+                            releaseAp()
+                            true
+                        } catch (e: Throwable) {
+                            log("cleanup: releasing the AP failed: ${e.javaClass.simpleName}: ${e.message}")
+                            false
+                        }
                     }
                 }
                 rules.await() to ap.await()
             }
 
-            // 3. Verify. A `cleanup` that reported success but left the chain is
-            //    exactly the silent failure that made the hotspot "stay visible".
-            var leftovers = leftovers(lanIf)
+            // 3. Verify - but only when there was something to remove in the
+            //    first place. On the clean path a second probe would only repeat
+            //    what the first one just said.
+            var leftovers = if (hasLeftovers) leftovers(lanIf) else emptyList()
             if (leftovers.isNotEmpty()) {
                 log("cleanup: still present after the first pass: ${leftovers.joinToString()}")
                 cleanupRules(lanIf)
@@ -84,25 +133,52 @@ class EmergencyCleaner(
 
             val took = System.currentTimeMillis() - started
             val clean = leftovers.isEmpty()
-            if (clean) {
-                log("cleanup: system is clean - no dnsmasq, rules, shaper or state of ours left (${took}ms)")
-            } else {
-                AppLog.w(
-                    AppLog.TAG_SERVICE,
-                    "cleanup: ${leftovers.joinToString()} survived two passes (${took}ms) - " +
-                        "open the debugger and export the log"
-                )
+            when {
+                clean && !hasLeftovers ->
+                    log("cleanup: nothing of ours was running - dropped the stale state files (${took}ms)")
+                clean ->
+                    log("cleanup: system is clean - no dnsmasq, rules, shaper or state of ours left (${took}ms)")
+                else ->
+                    AppLog.w(
+                        AppLog.TAG_SERVICE,
+                        "cleanup: ${leftovers.joinToString()} survived two passes (${took}ms) - " +
+                            "open the debugger and export the log"
+                    )
             }
-            if (!rulesOk.first) {
+            if (!parts.first) {
                 log("cleanup: the script reported an error while removing rules - see the log above")
             }
             clean
         }
 
+    /** Does the probe show something that only `setup_network.sh cleanup` removes? */
+    private fun probeNeedsCleanup(probe: RootShell.Probe): Boolean {
+        if (probe.dhcpOurs == true) return true
+        if (probe.dhcpOrphan == true) return true
+        if (probe.natJump == true) return true
+        if (probe.forwardJump == true) return true
+        if (probe.inputJump == true) return true
+        if (probe.masquerade == true) return true
+        if (probe.portalRedirect == true) return true
+        if (probe.ruleIif == true) return true
+        if (probe.ruleSubnet == true) return true
+        if (probe.shaper == true) return true
+        if (probe.netshare == true) return true
+        return false
+    }
+
     private fun cleanupRules(lanIf: String?): Boolean = try {
         RootShell.cleanupAll(lanIf)
     } catch (e: Throwable) {
         AppLog.e(AppLog.TAG_SERVICE, "cleanup: shell cleanup failed", e)
+        false
+    }
+
+    /** State files only - one command, ~10 ms. */
+    private fun purgeStateFiles(): Boolean = try {
+        RootShell.purgeState().isSuccess
+    } catch (e: Throwable) {
+        AppLog.e(AppLog.TAG_SERVICE, "cleanup: purge-state failed", e)
         false
     }
 
@@ -123,6 +199,8 @@ class EmergencyCleaner(
         if (probe.masquerade == true) found += "a masquerade rule"
         if (probe.portalRedirect == true) found += "the portal redirect"
         if (probe.ruleIif == true || probe.ruleSubnet == true) found += "policy-routing rules"
+        if (probe.shaper == true) found += "the tc shaper"
+        if (probe.netshare == true) found += "our root hostapd"
         return found
     }
 }
