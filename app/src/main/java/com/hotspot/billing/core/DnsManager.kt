@@ -41,15 +41,22 @@ object DnsManager {
         return DhcpManager.isAlive()
     }
 
+    /**
+     * DNS runs in the same dnsmasq as DHCP, so this is answered from the single
+     * probe the watchdog already ran - not with four more shell commands.
+     */
     fun getInfo(): DnsInfo {
-        val ourRunning = try { RootShell.isDnsmasqRunning() } catch (e: Throwable) { false }
-        val foreignRunning = try { RootShell.isForeignDnsmasqRunning() } catch (e: Throwable) { false }
-        val plan = RootShell.readLanPlan()
+        val probe = RootShell.probe()
+        val ourRunning = probe?.dhcpOurs == true || probe?.dhcpOrphan == true ||
+            (probe == null && (try { RootShell.isDnsmasqRunning() } catch (e: Throwable) { false }))
+        val foreignRunning = probe?.dhcpForeign
+            ?: (try { RootShell.isForeignDnsmasqRunning() } catch (e: Throwable) { false })
+        val gateway = probe?.gateway ?: RootShell.readLanPlan()?.gateway
         val (up1, up2) = WanDetector.getUpstreamDns()
 
         return DnsInfo(
             isRunning = ourRunning || foreignRunning,
-            gateway = plan?.gateway,
+            gateway = gateway,
             upstream1 = up1,
             upstream2 = up2,
             foreignRunning = foreignRunning

@@ -26,54 +26,34 @@ object NatManager {
     fun enableNat(wanIf: String, lanIf: String, subnet: String = "10.66.0.0/24"): Boolean {
         AppLog.i(AppLog.TAG_NET, "nat: enabling WAN=$wanIf LAN=$lanIf subnet=$subnet")
 
-        // IP forwarding check
-        val ipForward = try {
-            RootShell.ipForwardEnabled()
-        } catch (e: Throwable) {
-            null
-        }
-        if (ipForward == false) {
-            AppLog.w(AppLog.TAG_NET, "nat: ip_forward is 0, setup_network.sh should enable it")
-        }
-
-        // Ensure policy routing for self-managed AP interfaces
-        // This is critical for WiFi Direct / LOHS / root hostapd — without it,
-        // forwarded packets hit Android's trailing unreachable rule
-        val routeResult = RootShell.ensurePolicyRouting(lanIf, subnet)
-        if (!routeResult.isSuccess) {
-            AppLog.w(AppLog.TAG_NET, "nat: policy routing ensure failed exit=${routeResult.code}")
+        // One command that installs the forwarding pieces for THIS uplink
+        // (ip_forward, jumps, portal/DNS redirects, masquerade, policy routing).
+        //
+        // It replaces what the old path did - a jumpIsFirst check, a keepalive
+        // (the 20 s command from the debug log) and a "status" parse - and it
+        // never restarts DHCP, so enabling NAT cannot disconnect a client.
+        val installed = RootShell.repairNat(lanIf, wanIf, subnet)
+        if (!installed) {
+            AppLog.w(AppLog.TAG_NET, "nat: could not install forwarding rules for $lanIf -> $wanIf")
         }
 
-        // Verify NAT jump is first in PREROUTING
-        val natJumpFirst = try {
-            RootShell.jumpIsFirst("nat", "PREROUTING", "HS_NAT")
-        } catch (e: Throwable) {
-            null
+        val probe = RootShell.probe(lanIf, fresh = true)
+        val ipForward = probe?.ipForward ?: try { RootShell.ipForwardEnabled() } catch (e: Throwable) { null }
+        val natJump = probe?.natJump
+        val fwdJump = probe?.forwardJump
+        val masq = probe?.masquerade
+        AppLog.i(
+            AppLog.TAG_NET,
+            "nat: HS_NAT first=$natJump HS_FWD first=$fwdJump ip_forward=$ipForward masq=$masq"
+        )
+        if (masq == false) {
+            AppLog.w(
+                AppLog.TAG_NET,
+                "nat: no MASQUERADE for $subnet on $wanIf - forwarded client packets " +
+                    "would leave with a private source address and be dropped"
+            )
         }
-        val fwdJumpFirst = try {
-            RootShell.jumpIsFirst("filter", "FORWARD", "HS_FWD")
-        } catch (e: Throwable) {
-            null
-        }
-
-        AppLog.i(AppLog.TAG_NET, "nat: HS_NAT first=$natJumpFirst HS_FWD first=$fwdJumpFirst ip_forward=$ipForward")
-
-        // If jumps not first, keepalive repairs
-        if (natJumpFirst == false || fwdJumpFirst == false) {
-            AppLog.w(AppLog.TAG_NET, "nat: jumps not first, repairing via keepalive")
-            val keepalive = RootShell.keepaliveNetwork()
-            if (!keepalive.isSuccess) {
-                AppLog.e(AppLog.TAG_NET, "nat: keepalive repair failed")
-                return false
-            }
-        }
-
-        // Final verification: check iptables has masquerade for WAN
-        val status = RootShell.networkStatus()
-        val hasMasq = status.any { it.contains("MASQUERADE") || it.contains("masquerade") }
-        AppLog.i(AppLog.TAG_NET, "nat: masquerade present=$hasMasq")
-
-        return true
+        return installed
     }
 
     fun disableNat(): Boolean {
@@ -83,13 +63,31 @@ object NatManager {
     }
 
     fun isNatEnabled(): Boolean {
-        val natFirst = try { RootShell.jumpIsFirst("nat", "PREROUTING", "HS_NAT") } catch (e: Throwable) { null }
-        val fwdFirst = try { RootShell.jumpIsFirst("filter", "FORWARD", "HS_FWD") } catch (e: Throwable) { null }
-        val ipFwd = try { RootShell.ipForwardEnabled() } catch (e: Throwable) { null }
+        val probe = RootShell.probe()
+        val natFirst = probe?.natJump
+            ?: (try { RootShell.jumpIsFirst("nat", "PREROUTING", "HS_NAT") } catch (e: Throwable) { null })
+        val fwdFirst = probe?.forwardJump
+            ?: (try { RootShell.jumpIsFirst("filter", "FORWARD", "HS_FWD") } catch (e: Throwable) { null })
+        val ipFwd = probe?.ipForward
+            ?: (try { RootShell.ipForwardEnabled() } catch (e: Throwable) { null })
+        val masq = probe?.masquerade
 
         return (natFirst == true || natFirst == null) && // null = unknown, don't alarm
                (fwdFirst == true || fwdFirst == null) &&
+               (masq != false) &&
                (ipFwd == true || ipFwd == null)
+    }
+
+    /**
+     * Everything a client needs to reach the internet, as one answer. Used by
+     * the watchdog to decide between "repair forwarding" and "nothing to do".
+     */
+    fun forwardingHealthy(): Boolean? {
+        val probe = RootShell.probe() ?: return null
+        if (probe.wanIf == null) return null
+        return probe.natJump == true && probe.forwardJump == true &&
+            probe.masquerade == true && probe.ipForward == true &&
+            probe.ruleIif == true && probe.ruleSubnet == true
     }
 
     fun repair(wanIf: String, lanIf: String, subnet: String): Boolean {
@@ -103,8 +101,9 @@ object NatManager {
     }
 
     fun checkInternet(): Boolean {
-        // Check if default route exists and WAN interface has RX bytes
-        val wan = RootShell.defaultRouteInterface()
+        // Check if default route exists and WAN interface has RX bytes.
+        // The probe already resolved the uplink, so this costs no extra command.
+        val wan = RootShell.probe()?.wanIf ?: RootShell.defaultRouteInterface()
         if (wan == null) {
             AppLog.w(AppLog.TAG_NET, "nat: no default route, no internet")
             return false

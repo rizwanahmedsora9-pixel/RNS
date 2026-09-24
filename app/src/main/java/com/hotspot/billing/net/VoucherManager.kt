@@ -21,6 +21,17 @@ class VoucherManager(private val db: AppDatabase) {
 
     private val classIdCounter = AtomicInteger(0)
 
+    /**
+     * Last time each code had its rules applied, so a client that re-submits the
+     * same voucher (reconnect, browser retry, the user pressing Connect twice)
+     * does not run the whole reserve + authorize + tc sequence again.
+     *
+     * The 2026-09-24 debug log shows four `POST /redeem` for one voucher inside
+     * 25 s, each one repeating ~6 shell commands - 6 s of root shell time, on the
+     * same shell the DHCP server is being managed from.
+     */
+    private val lastAppliedAt = HashMap<String, Long>()
+
     @Volatile
     private var restored = false
 
@@ -102,10 +113,20 @@ class VoucherManager(private val db: AppDatabase) {
                     // of just reporting success. Pass the address it holds right now
                     // so it is not blackholed until DHCP hands it the reserved one.
                     else -> {
-                        applyAccess(
-                            boundMac, ip, currentIp, voucher.classId,
-                            voucher.rateKbit, voucher.ceilKbit
-                        )
+                        val sinceApplied = now - (lastAppliedAt[voucher.code] ?: 0L)
+                        if (sinceApplied < REAPPLY_COOLDOWN_MS) {
+                            AppLog.i(
+                                AppLog.TAG_VOUCHER,
+                                "redeem \"${voucher.code}\" already applied ${sinceApplied}ms ago " +
+                                    "for $boundMac - not re-running the firewall/TC commands"
+                            )
+                        } else {
+                            applyAccess(
+                                boundMac, ip, currentIp, voucher.classId,
+                                voucher.rateKbit, voucher.ceilKbit
+                            )
+                            lastAppliedAt[voucher.code] = now
+                        }
                         IpPool.markUsed(ip)
                         db.sessionDao().insert(
                             UserSession(
@@ -163,6 +184,7 @@ class VoucherManager(private val db: AppDatabase) {
         db.voucherDao().upsert(updated)
 
         applyAccess(mac, ip, currentIp, classId, voucher.rateKbit, voucher.ceilKbit)
+        lastAppliedAt[voucher.code] = now
 
         db.sessionDao().insert(
             UserSession(
@@ -346,5 +368,8 @@ class VoucherManager(private val db: AppDatabase) {
         /** Offset for the cap on the address the client still holds. Stays inside tc's 16-bit class id. */
         const val CLASS_ID_TRANSITIONAL = 20_000
         const val CLASS_ID_TRANSITIONAL_MAX = 45_000
+
+        /** Re-submitting the same voucher within this window re-applies nothing. */
+        const val REAPPLY_COOLDOWN_MS = 20_000L
     }
 }
