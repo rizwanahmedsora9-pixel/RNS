@@ -52,6 +52,14 @@ object RootShell {
     /** A poll gives up after this long instead of queueing behind a long command. */
     private const val BUSY_SKIP_WAIT_MS = 1_200L
 
+    /**
+     * Leases and arp are *polls*: they are called by the watchdog, the UI and the
+     * portal, and a stale answer is fine, so they skip instead of queueing. The
+     * value is deliberately the same as [BUSY_SKIP_WAIT_MS] - named separately
+     * because the two may drift apart (the probe wants a longer patience).
+     */
+    private const val POLL_WAIT_MS = BUSY_SKIP_WAIT_MS
+
     /** The probe is worth waiting a moment for: one command replaces a dozen. */
     private const val PROBE_WAIT_MS = 2_500L
 
@@ -59,6 +67,25 @@ object RootShell {
     private const val PROBE_TTL_MS = 2_000L
     private const val LEASE_TTL_MS = 3_000L
     private const val ARP_TTL_MS = 3_000L
+
+    // -------------------------------------------------------------------- input validation
+    //
+    // Everything below is interpolated into a command that runs as root, so the
+    // callers cannot be trusted: the SSID/passphrase, the interface names and the
+    // addresses all come from preferences or from the portal. These patterns are
+    // the only reason `setup_network.sh reserve "$mac" "$ip"` cannot carry a `;`.
+
+    /** Interface names: `p2p0`, `wlan0`, `ap0`, `ccmni0`, `eth0`... */
+    private val IFACE_REGEX = Regex("^[A-Za-z][A-Za-z0-9_.-]{1,14}$")
+
+    /** Dotted quad. */
+    private val IP_REGEX = Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")
+
+    /** Six hex pairs, `:`-separated. */
+    private val MAC_REGEX = Regex("^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$")
+
+    /** Dotted quad plus prefix length. */
+    private val SUBNET_REGEX = Regex("^\\d{1,3}(\\.\\d{1,3}){3}/\\d{1,2}$")
 
     @Volatile
     private var busySkips = 0
