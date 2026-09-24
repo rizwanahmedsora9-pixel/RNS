@@ -26,7 +26,9 @@ export HOTSPOT_CONF="$WORK/hotspot.env"
 export STUB_LOG="$LOG"
 export STUB_RULES="$WORK/rules.json"
 export STUB_TC="$WORK/tc.json"
+export STUB_IPRULES="$WORK/iprules.txt"
 export PATH="$STUBS:$PATH"
+: > "$STUB_IPRULES"
 
 cat > "$WORK/hotspot.env" <<'ENV'
 WAN_IF=ccmni0
@@ -132,14 +134,34 @@ EOF
 cat > "$STUBS/ip" <<'EOF'
 #!/usr/bin/env bash
 echo "ip $*" >> "$STUB_LOG"
+RULES="${STUB_IPRULES:-/dev/null}"
 case "$*" in
   "route show default") echo "default via 192.168.1.1 dev ccmni0 metric 1" ;;
   "-o link show up")    printf '1: lo: <LOOPBACK,UP> mtu 65536\n3: ccmni0: <NOARP,UP,LOWER_UP> mtu 1500\n10: ap0: <BROADCAST,MULTICAST,UP> mtu 1500\n' ;;
   "link show ap0")      echo "10: ap0: <BROADCAST,MULTICAST,UP> mtu 1500" ;;
+  "-o link show")       printf '1: lo: <LOOPBACK,UP> mtu 65536\n3: ccmni0: <NOARP,UP,LOWER_UP> mtu 1500\n10: ap0: <BROADCAST,MULTICAST,UP> mtu 1500\n' ;;
   "-o -4 addr show dev ap0")
         # Empty by default so start() assigns 10.66.0.1. The adoption scenario
         # exports STUB_LAN_ADDR with a full `ip -o -4 addr` line.
         if [ -n "${STUB_LAN_ADDR:-}" ]; then printf '%s\n' "$STUB_LAN_ADDR"; fi
+        ;;
+  "rule show")          cat "$RULES" 2>/dev/null ;;
+  rule*)
+        # NB: bash does not strip prefixes from "$*" directly (${*#x} is a no-op),
+        # so copy into a variable first.
+        ALL="$*"
+        REST="${ALL#rule }"
+        OP="${REST%% *}"
+        SPEC="${REST#"$OP "}"
+        case "$OP" in
+            add) echo "$SPEC" >> "$RULES" ;;
+            del)
+                if [ -s "$RULES" ]; then
+                    grep -v -F "$SPEC" "$RULES" > "$RULES.tmp" 2>/dev/null
+                    mv "$RULES.tmp" "$RULES"
+                fi
+                ;;
+        esac
         ;;
 esac
 exit 0
@@ -211,10 +233,61 @@ cat > "$STUBS/dnsmasq" <<'EOF'
 #!/usr/bin/env bash
 echo "dnsmasq $*" >> "$STUB_LOG"
 pidfile=""
-for a in "$@"; do case "$a" in --pid-file=*) pidfile="${a#--pid-file=}";; esac; done
+has_range=""
+for a in "$@"; do
+    case "$a" in
+        --pid-file=*) pidfile="${a#--pid-file=}" ;;
+        --dhcp-range=*) has_range=1 ;;
+    esac
+done
 [ -n "$pidfile" ] || { echo "stub: no --pid-file" >&2; exit 1; }
+# Simulate the system's own DHCP server holding UDP/67 (Android 10+ serves WiFi
+# Direct / local-only hotspots from system_server). Only DHCP mode fails; a
+# DNS-only dnsmasq must still start.
+if [ -n "${STUB_PORT67_TAKEN:-}" ] && [ -n "$has_range" ]; then
+    echo "dnsmasq: failed to create listening socket for port 67" >&2
+    exit 1
+fi
 # Ignore SIGHUP (like real dnsmasq, which reloads on it) so the reserve test works.
 sh -c 'trap "" HUP; exec sleep 300' &
+echo $! > "$pidfile"
+exit 0
+EOF
+
+cat > "$STUBS/iw" <<'EOF'
+#!/usr/bin/env bash
+echo "iw $*" >> "$STUB_LOG"
+case "$*" in
+    "dev ccmni0 info")
+        echo "Interface ccmni0"
+        echo "	ifindex 3"
+        echo "	type managed"
+        echo "	channel 6 (2437 MHz), width: 20 MHz, center1: 2437 MHz"
+        ;;
+    "dev rnsap0 info")
+        echo "Interface rnsap0"
+        echo "	type AP"
+        echo "	channel 6 (2437 MHz), width: 20 MHz"
+        ;;
+esac
+exit 0
+EOF
+
+cat > "$STUBS/hostapd" <<'EOF'
+#!/usr/bin/env bash
+echo "hostapd $*" >> "$STUB_LOG"
+pidfile=""
+conf=""
+prev=""
+for a in "$@"; do
+    case "$prev" in -P) pidfile="$a" ;; esac
+    case "$a" in *.conf) conf="$a" ;; esac
+    prev="$a"
+done
+[ -n "$conf" ] || { echo "stub hostapd: no config file given" >&2; exit 1; }
+[ -f "$conf" ] || { echo "stub hostapd: $conf does not exist" >&2; exit 1; }
+[ -n "$pidfile" ] || { echo "stub hostapd: no -P pidfile" >&2; exit 1; }
+sh -c 'exec sleep 120' &
 echo $! > "$pidfile"
 exit 0
 EOF
@@ -222,6 +295,7 @@ EOF
 chmod +x "$STUBS"/*
 SETUP="sh $ROOT/scripts/setup_network.sh"
 SHAPER="sh $ROOT/scripts/bandwidth_control.sh"
+NETSHARE="sh $ROOT/scripts/netshare_ap.sh"
 
 # ------------------------------------------------------------------- scenarios
 section "syntax"
@@ -387,6 +461,124 @@ assert "1:103" in db["classes"], "remove-class dropped an unrelated class"
 assert not any("192.168.43.50" in f for f in db["filters"]), db["filters"]
 PY
 [ $? -eq 0 ] && pass "remove-class drops only that class id" || fail "remove-class left the transitional class"
+
+section "policy routing: a self-managed AP interface reaches the internet"
+# Android ends its ip rule list with an "unreachable" rule. Traffic forwarded
+# from an interface WE brought up (WiFi Direct group, local-only hotspot, root
+# hostapd) has no fwmark and no local UID, so without these rules the client has
+# an IP, sees the sign-in page, and still gets nothing from the internet.
+: > "$LOG"; : > "$STUB_IPRULES"
+$SETUP start > "$WORK/out.route" 2>&1 || { fail "start (routing scenario) exited non-zero"; cat "$WORK/out.route"; }
+check "LAN-in rule added to the main table" 1 "ip rule add pref 15500 iif ap0 lookup main"
+check "return-traffic rule added for the subnet" 1 "ip rule add pref 15501 to 10.66.0.0/24 lookup main"
+if grep -q "iif ap0 lookup main" "$STUB_IPRULES"; then
+    pass "the rule is actually present in the routing table"
+else
+    fail "no iif rule recorded: $(cat "$STUB_IPRULES" 2>/dev/null)"
+fi
+
+: > "$LOG"
+$SETUP keepalive > "$WORK/out.ka1" 2>&1
+$SETUP keepalive > "$WORK/out.ka2" 2>&1
+check "keepalive does not pile up duplicate rules" 0 "ip rule add pref 1550"
+
+section "route subcommand (re-apply after an interface change)"
+: > "$LOG"
+$SETUP route p2p-wlan0-0 192.168.49.0/24 > "$WORK/out.route2" 2>&1
+$SETUP route p2p-wlan0-0 192.168.49.0/24 > "$WORK/out.route3" 2>&1
+check "rules follow the interface the app is using now" 1 "ip rule add pref 15500 iif p2p-wlan0-0 lookup main"
+check "subnet rule follows too" 1 "ip rule add pref 15501 to 192.168.49.0/24 lookup main"
+
+section "stop removes the routing rules"
+: > "$LOG"
+$SETUP stop > "$WORK/out.stoproute" 2>&1
+check "our rule priorities are released on stop" 2 "ip rule del pref 1550"
+
+section "DHCP port 67 held by the system: DNS-only fallback"
+# Android 10+ serves DHCP for WiFi Direct / local-only hotspots from inside
+# system_server, so no dnsmasq process exists to take over from. Port 53 must
+# still be ours or the client's connectivity probe cannot resolve and the
+# sign-in sheet never appears.
+: > "$LOG"
+STUB_PORT67_TAKEN=1 $SETUP start > "$WORK/out.dnsonly" 2>&1 || { fail "DNS-only start exited non-zero"; cat "$WORK/out.dnsonly"; }
+if grep -q '^DHCP_OWNER=ours-dns$' "$STATE/hotspot.runtime"; then
+    pass "runtime records DHCP_OWNER=ours-dns"
+else
+    fail "expected DHCP_OWNER=ours-dns, got: $(cat "$STATE/hotspot.runtime" 2>/dev/null)"
+fi
+if grep -E "^dnsmasq " "$LOG" | grep -v -- "--dhcp-range" | grep -q -- "--no-resolv"; then
+    pass "a DNS-only dnsmasq was started (no --dhcp-range, so it cannot clash on port 67)"
+else
+    fail "no DNS-only dnsmasq invocation in the log"
+fi
+if grep -q "DNS-only" "$WORK/out.dnsonly"; then
+    pass "the log says DNS-only mode was used"
+else
+    fail "no DNS-only message in the output: $(cat "$WORK/out.dnsonly")"
+fi
+if grep -E "^dnsmasq " "$LOG" | grep -v -- "--dhcp-range" | grep -q -- "--listen-address=10.66.0.1"; then
+    pass "the DNS-only dnsmasq listens on the gateway address"
+else
+    fail "the DNS-only dnsmasq is not bound to the gateway address"
+fi
+
+section "netshare_ap.sh: root hostapd, no hotspot toggle"
+: > "$LOG"
+$NETSHARE start "RNS-Test" "password123" > "$WORK/out.netshare" 2>&1 \
+    || { fail "netshare start exited non-zero"; cat "$WORK/out.netshare"; }
+check "asks the driver for a second interface on the STA radio" 1 "iw dev ccmni0 interface add rnsap0 type __ap"
+if [ -f "$STATE/netshare_hostapd.conf" ]; then
+    conf_ok=1
+    grep -q '^interface=rnsap0$'      "$STATE/netshare_hostapd.conf" || conf_ok=0
+    grep -q '^ssid=RNS-Test$'          "$STATE/netshare_hostapd.conf" || conf_ok=0
+    grep -q '^wpa_passphrase=password123$' "$STATE/netshare_hostapd.conf" || conf_ok=0
+    grep -q '^channel=6$'              "$STATE/netshare_hostapd.conf" || conf_ok=0
+    grep -q '^wpa=2$'                  "$STATE/netshare_hostapd.conf" || conf_ok=0
+    [ "$conf_ok" = "1" ] && pass "hostapd.conf has the interface, SSID, passphrase, channel and WPA2" \
+                         || { fail "hostapd.conf is wrong:"; cat "$STATE/netshare_hostapd.conf"; }
+else
+    fail "no hostapd.conf was written"
+fi
+if [ -s "$STATE/netshare_hostapd.pid" ] && kill -0 "$(cat "$STATE/netshare_hostapd.pid")" 2>/dev/null; then
+    pass "hostapd was started in the background and is alive"
+else
+    fail "hostapd is not running (pidfile: $(cat "$STATE/netshare_hostapd.pid" 2>/dev/null))"
+fi
+if grep -q '^IFACE=rnsap0$' "$WORK/out.netshare" && grep -q '^SSID=RNS-Test$' "$WORK/out.netshare"; then
+    pass "stdout reports the interface and SSID the app parses"
+else
+    fail "stdout is not parseable: $(cat "$WORK/out.netshare")"
+fi
+if [ -f "$STATE/netshare.runtime" ] && grep -q '^MODE=root-hostapd$' "$STATE/netshare.runtime"; then
+    pass "netshare.runtime written"
+else
+    fail "netshare.runtime missing/wrong: $(cat "$STATE/netshare.runtime" 2>/dev/null)"
+fi
+$NETSHARE start "RNS-Test" "short" > "$WORK/out.short" 2>&1 \
+    && fail "a 5-character passphrase was accepted" \
+    || pass "a too-short passphrase is refused before touching the driver"
+
+: > "$LOG"
+$NETSHARE stop > "$WORK/out.netstop" 2>&1
+check "stop kills hostapd and removes the interface it created" 1 "iw dev rnsap0 del"
+if [ ! -f "$STATE/netshare_hostapd.pid" ] && [ ! -f "$STATE/netshare.runtime" ]; then
+    pass "stop cleans up the pidfile and runtime file"
+else
+    fail "stop left state behind"
+fi
+
+section "foreign-dhcp / procs report cleanly"
+: > "$LOG"
+if [ "$($SETUP foreign-dhcp 2>/dev/null)" = "no" ]; then
+    pass "foreign-dhcp says 'no' when no other DHCP server runs"
+else
+    fail "foreign-dhcp answered: $($SETUP foreign-dhcp 2>/dev/null)"
+fi
+$SETUP procs > "$WORK/out.procs" 2>&1 || fail "procs exited non-zero"
+$SETUP diag > "$WORK/out.diag" 2>&1 || fail "diag exited non-zero"
+for needed in "policy routing" "dhcp / ap processes" "arp" "netshare ap runtime"; do
+    if grep -q "$needed" "$WORK/out.diag"; then pass "diag report includes: $needed"; else fail "diag report is missing: $needed"; fi
+done
 
 section "teardown"
 $SHAPER stop >/dev/null 2>&1

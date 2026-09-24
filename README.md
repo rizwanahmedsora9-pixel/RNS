@@ -24,9 +24,12 @@ Router1 (ISP) ──> rooted Android phone  ──> Router2 ──> users
 | Path | What it is |
 | --- | --- |
 | `app/` | Android app (Kotlin, Room, NanoHTTPD, libsu). Open this folder's parent in Android Studio. |
-| `scripts/setup_network.sh` | **Source of truth** for NAT, captive-portal redirect, DHCP and MAC authorisation. |
+| `scripts/setup_network.sh` | **Source of truth** for NAT, captive-portal redirect, DHCP, policy routing and MAC authorisation. |
 | `scripts/bandwidth_control.sh` | **Source of truth** for per-client `tc`/HTB shaping (both directions). |
-| `tools/run-script-selftest.sh` | Runs those two scripts against stub kernel commands and asserts the resulting ruleset. |
+| `scripts/netshare_ap.sh` | Root fallback AP: asks the driver for a second interface and runs `hostapd` on it — a hotspot with no toggle and no framework API. |
+| `app/…/debug/` | The recorder behind the [debugger](#debugger): ring buffer + file log, crash guard, logcat mirror, health findings (`H1`–`H10`), the full diagnostic report. |
+| `app/…/net/ApMode.kt`, `ApLauncher.kt`, `WifiShareAp.kt` | How the customer-facing WiFi network gets created: system hotspot, local-only hotspot, WiFi Direct group (NetShare-style), root `hostapd`, or manual. |
+| `tools/run-script-selftest.sh` | Runs those scripts against stub kernel commands and asserts the resulting ruleset. |
 | `.github/workflows/` | APK build, README refresh, branch cleanup. |
 | `app/src/main/assets/*.sh` | **Generated** from `scripts/` by `:app:syncShellScripts`; git-ignored, never edited. |
 | `Hotspot .txt` | Terminal capture from the device that the design is based on. |
@@ -46,12 +49,32 @@ workflow artifact — see [CI](#continuous-integration).
 
 1. `adb install app-release.apk` (or just open the APK on the phone), then grant the app root when Magisk prompts.
 2. Launch the app. The gateway starts as a foreground service and the **Dashboard** shows live state: root, hotspot, WAN/LAN interfaces, portal, and an event log that names every command it runs - if something fails, the reason is on that screen.
-3. **Turning the hotspot on.** On Android 12+ the app starts the Wi-Fi hotspot itself via `cmd wifi start-softap`. On Android 9/10 (the Infinix Hot 8) no root command exists for that, so the app says so on the dashboard and shows **Open Android hotspot settings** - flip the toggle there and the app detects the AP interface within ~2 seconds and takes over automatically (IP, DHCP, NAT, portal). It also re-arms itself if the hotspot is toggled off and on again.
+3. **The WiFi network customers join.** Settings → *Hotspot mode* picks how it is created; the
+   phone's own WiFi stays connected the whole time, so it keeps **receiving** internet on
+   `wlan0`/`ccmni` while **sending** it out on the second interface:
+
+   | Mode | What it does | Needs the Android hotspot toggle? |
+   | --- | --- | --- |
+   | **Automatic** (default) | Tries each method in order and logs every attempt with the reason it failed: `cmd wifi start-softap` (Android 12+) → local-only hotspot → WiFi Direct group → root `hostapd`. | no |
+   | **NetShare (WiFi Direct)** | The phone becomes a WiFi Direct **group owner** — a real AP legacy clients can join, exactly like the NetShare app. Android does not route it, so the app adds the NAT/DHCP/portal itself. | no |
+   | **Local-only hotspot** | `WifiManager.startLocalOnlyHotspot()` — an AP the app may create on its own (Android picks the SSID/password; the app reads them back and shows them). | no |
+   | **Root hostapd** | `scripts/netshare_ap.sh`: ask the driver for a second interface (`iw dev … interface add`), run `hostapd` on it. Own SSID/password/channel. | no |
+   | **System hotspot** | The real Android hotspot (`cmd wifi start-softap`, or the toggle). | Android 9/10: yes |
+   | **Manual** | Create nothing; wait for an interface to appear and take it over. | yes |
+
+   On Android 9/10 (the Infinix Hot 8) the no-toggle methods need **Location switched ON** and
+   the location permission (Android refuses to create *any* WiFi network without them, and
+   reports it as a generic failure) — the app asks on first start and again from
+   Settings → *Permissions*. If a method fails, the dashboard and the
+   [debugger](#debugger) say which one and why in plain words
+   (`ERROR_INCOMPATIBLE_MODE - … this radio cannot run an AP and a WiFi connection at the same
+   time`). The gateway re-tries every 60 s and takes over the instant an interface appears, so
+   flipping the system toggle later still works.
 4. When the hotspot comes up the app **keeps the address Android already assigned** (usually `192.168.43.1`). Replacing that with `10.66.0.1` is what left phones spinning on "Obtaining IP address". DHCP offers are sent as broadcasts, because MediaTek radios drop the unicast offer and the client never finishes DHCP. If Android's own DHCP server comes back and the two would fight, the app steps aside and lets the phone hand out addresses — the sign-in page still appears either way. After installing this update, tell users to **forget the Wi-Fi network and join again once**.
 5. **Vouchers** tab: pick a preset (1 Hour / 3 Hours / 1 Day / 7 Days) or fill in plan name, duration and speeds, then *Generate*. Codes are copyable/shareable straight from the dialog; the list filters by status and each row can be expired or deleted.
 6. **Users** tab: everyone currently on the LAN (online *with* a voucher vs *waiting at the portal*), saved user profiles - a name/phone/note per device MAC, recorded automatically the first time a device is seen - and session history.
-7. **Settings** tab: hotspot SSID/password, WAN/LAN interface pins (blank = automatic), with a *Detect* button that fills in what the phone currently has.
-8. Check the raw state any time with `su -c 'sh /data/local/tmp/setup_network.sh status'`.
+7. **Settings** tab: hotspot mode (see above), SSID/password, WAN/LAN interface pins (blank = automatic), a *Detect* button that fills in what the phone currently has, and *Permissions* / *Debugger* shortcuts.
+8. Check the raw state any time with `su -c 'sh /data/local/tmp/setup_network.sh status'` — or `… diag` for the full dump the debugger's **Full report** is built from.
 
 ### Updating the app
 
@@ -88,6 +111,32 @@ and never show the sheet). On redemption:
 Leases are 10 minutes so a client migrates to its reserved IP on the next renew.
 Until then the MAC rule already lets it through, so it does not go dark mid-switch.
 
+## Debugger
+
+**Dashboard → Debugger** (also Settings → *Debugger*, and the *Debugger* action on the
+ongoing notification) opens a screen whose only job is to get the text out of the phone:
+tap **Copy all** or **Share** and paste it into a chat. Nothing has to be selected by hand.
+
+What it records, continuously and in order:
+
+| Source | What you see |
+| --- | --- |
+| Every root command | `$ iptables -t nat -S …` → `exit 0, 43ms`, plus stdout/stderr. A rule that was *not* applied is visible instead of silent. |
+| AP bring-up | Which mode, which method was tried, what the framework answered (`onFailed reason=3` decoded into words), which interface appeared, which address was adopted, the SSID/password customers must join. |
+| Watchdog | Findings with stable codes **H1**–**H10**: `H1` AP interface gone, `H2` address moved, `H3` no DHCP server ("Obtaining IP address"), `H4` IP forwarding off, `H5` portal dead, `H6` our iptables jump no longer first, `H7` phone has no internet side, `H8` policy-routing rule missing, `H9` clients but no voucher yet, `H10` portal probe not HTTP 200. Each one is logged when it appears, again when it recovers, and carries the fix. |
+| The system's own log | A logcat mirror of `wpa_supplicant`, `hostapd`, `Tethering`, `IpServer`, `WifiP2pService`, `netd`, `dnsmasq` — off / WiFi tags / everything. With root it is the full log; without, this app's lines. |
+| Crashes | Any uncaught exception or failed coroutine is written to `files/logs/last_crash.txt` **together with the 120 records before it**, and reported on the next start. |
+| Vouchers & portal | Redeem attempts and outcomes, activations, expiries, sweeps, and every portal request. |
+
+Buttons: **Copy all** / **Share** / **Save .txt** (shares the file for reports too large to
+paste), **Full report** (an 11-section dump: device, permissions, WiFi/P2P/AP state,
+interfaces, routing policy, iptables *with packet counters*, both DHCP servers, leases, ARP,
+shaper, live portal probes, logcat and the app log), **Check now** (run the health check on
+demand), **Live log** / level filters **All · Info+ · Warn+**, **Clear**.
+
+The log is a 6 000-line ring buffer mirrored to `files/logs/applog.txt` (survives the process
+dying), rate-limited at 300 lines/s with the dropped count *recorded* rather than hidden.
+
 ## Continuous integration
 
 | Workflow | Trigger | What it does |
@@ -112,10 +161,16 @@ Working: voucher generation and management from the admin UI, voucher redemption
 single-device binding, static IP assignment, per-plan shaping in both directions,
 captive-portal probes for Android/iOS/Windows, foreground service that survives the
 app being swiped away, auto-restart after reboot, expiry sweep, user profiles
-auto-recorded per device MAC, and an event log that surfaces every root command.
+auto-recorded per device MAC, a watchdog that reports and repairs drift (findings
+`H1`–`H10`), and a [debugger](#debugger) that records every command, callback and
+finding as copyable text.
 
-Hotspot bring-up: automatic on Android 12+; on Android 9/10 it waits for the OS
-hotspot toggle and configures itself the moment the interface appears (see Deploy).
+Hotspot bring-up: no toggle needed — local-only hotspot, WiFi Direct group owner
+(NetShare-style) or root `hostapd` create the network while the phone's own WiFi stays
+connected; on Android 12+ the real system hotspot is tried first, and on Android 9/10 the
+system toggle still works and is adopted within ~2 seconds whenever it appears. What a
+given radio supports is a hardware question: the debugger names the exact framework error
+when a method is refused (see [AUDIT.md O6](AUDIT.md#7-still-open)).
 
 Not built yet — see [AUDIT.md §7](AUDIT.md#7-still-open). The important remaining ones:
 no per-session byte accounting, portal traffic is plaintext HTTP on the LAN, and no

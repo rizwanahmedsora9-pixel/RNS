@@ -13,6 +13,10 @@
 #   sh /data/local/tmp/setup_network.sh deauthorize <mac>
 #   sh /data/local/tmp/setup_network.sh reserve     <mac> <static_ip>
 #   sh /data/local/tmp/setup_network.sh unreserve   <mac>
+#   sh /data/local/tmp/setup_network.sh route       <lan_if> <subnet>   # policy routing only
+#   sh /data/local/tmp/setup_network.sh foreign-dhcp                    # yes/no
+#   sh /data/local/tmp/setup_network.sh procs                           # dhcp/ap processes
+#   sh /data/local/tmp/setup_network.sh diag                            # everything, for the debugger
 #
 # CONFIG
 #   Every setting below can be overridden without editing this file by writing
@@ -74,6 +78,16 @@ PORTAL_PORT="${PORTAL_PORT:-8080}"
 # sign-in sheet. This listener forwards to the real resolvers; port 80 is what
 # gets intercepted.
 HIJACK_PORT="${HIJACK_PORT:-53}"
+
+# --- policy routing ----------------------------------------------------------
+# Priorities for the `ip rule` entries that let forwarded traffic reach the main
+# routing table. Android routes per-network and ends with an "unreachable" rule,
+# so a packet that is not from a local UID and carries no fwmark is dropped. The
+# system hotspot survives because netd adds tethering rules for it; an interface
+# this app brought up itself (WiFi Direct group, local-only hotspot, root
+# hostapd) gets none - clients then have an IP and a sign-in page but no internet.
+RULE_PREF_IIF="${RULE_PREF_IIF:-15500}"
+RULE_PREF_SUBNET="${RULE_PREF_SUBNET:-15501}"
 
 # --- runtime files -----------------------------------------------------------
 PIDFILE="$STATE_DIR/dnsmasq_hotspot.pid"
@@ -221,6 +235,11 @@ relax_iface() {
         echo 0 > /proc/sys/net/ipv4/conf/all/rp_filter 2>/dev/null || true
         echo 1 > "$IF_DIR/bc_forwarding" 2>/dev/null || true
     fi
+    # Only when this interface exists in /proc. An off-device self-test has no
+    # ap0 and must not flip the machine-wide forwarding sysctl.
+    if [ -d "$IF_DIR" ]; then
+        echo 1 > /proc/sys/net/ipv4/ip_forward 2>/dev/null || true
+    fi
     # No IPv6 router advertisements. A client that gets an IPv6 address probes
     # over IPv6, that probe times out (we cannot serve it), and Android treats
     # a timeout as "not a captive portal" - so the sign-in sheet never appears.
@@ -228,6 +247,53 @@ relax_iface() {
     if [ -d "$V6_DIR" ]; then
         echo 1 > "$V6_DIR/disable_ipv6" 2>/dev/null || true
     fi
+}
+
+# Put LAN traffic into the main routing table (see RULE_PREF_* above). Idempotent:
+# `ip rule add` of an identical rule fails with EEXIST, so check first.
+install_policy_routing() {
+    RULES=$(ip rule show 2>/dev/null)
+    case "$RULES" in
+        *"iif $LAN_IF lookup main"*)
+            ;;
+        *)
+            if ip rule add pref "$RULE_PREF_IIF" iif "$LAN_IF" lookup main 2>/dev/null; then
+                log "routing: $LAN_IF -> main table (pref $RULE_PREF_IIF)"
+            else
+                log "routing: FAILED to add the iif rule for $LAN_IF - forwarded packets may be dropped by Android's unreachable rule"
+            fi
+            ;;
+    esac
+    case "$RULES" in
+        *"to $LAN_SUBNET lookup main"*)
+            ;;
+        *)
+            if ip rule add pref "$RULE_PREF_SUBNET" to "$LAN_SUBNET" lookup main 2>/dev/null; then
+                log "routing: return traffic to $LAN_SUBNET -> main table (pref $RULE_PREF_SUBNET)"
+            else
+                log "routing: FAILED to add the subnet rule for $LAN_SUBNET"
+            fi
+            ;;
+    esac
+}
+
+remove_policy_routing() {
+    # Bounded: a `del` that silently does nothing must not spin here, because
+    # this script runs on the app's single root shell and would block it.
+    N=0
+    while [ "$N" -lt 5 ] && ip rule show 2>/dev/null | grep -q "iif $LAN_IF lookup main"; do
+        ip rule del iif "$LAN_IF" lookup main 2>/dev/null || break
+        N=$((N + 1))
+    done
+    N=0
+    while [ "$N" -lt 5 ] && ip rule show 2>/dev/null | grep -q "to $LAN_SUBNET lookup main"; do
+        ip rule del to "$LAN_SUBNET" lookup main 2>/dev/null || break
+        N=$((N + 1))
+    done
+    # Belt and braces: drop anything left at our priorities, whichever subnet or
+    # interface name it was written for (the interface can change between runs).
+    ip rule del pref "$RULE_PREF_IIF" 2>/dev/null
+    ip rule del pref "$RULE_PREF_SUBNET" 2>/dev/null
 }
 
 is_private_slash24() {
@@ -250,7 +316,10 @@ derive_subnet() {
 }
 
 write_runtime() {
+    # LAN_IF_USED, not LAN_IF: keepalive() sources this file, and a stale LAN_IF
+    # here would override the interface hotspot.env was just updated with.
     cat > "$RUNTIME_FILE" <<EOF
+LAN_IF_USED=$LAN_IF
 LAN_IP=$LAN_IP
 LAN_PREFIX=$LAN_PREFIX
 LAN_SUBNET=$LAN_SUBNET
@@ -477,16 +546,57 @@ run_dnsmasq_min() {
 
 # A pid left over from a previous gateway address keeps answering on the wrong
 # subnet. Clients then never finish DHCP on the address we just adopted.
+# Identity is our own pidfile plus the address we are serving now: that also
+# recognises the DNS-only instance, which has no --dhcp-range at all.
 dnsmasq_matches() {
     P="$1"
     cmd=$(tr '\0' ' ' < "/proc/$P/cmdline" 2>/dev/null) || return 1
     case "$cmd" in
-        *"--listen-address=$LAN_IP "*|*"--listen-address=$LAN_IP") ;;
+        *"--pid-file=$PIDFILE"*) ;;
         *) return 1 ;;
     esac
     case "$cmd" in
-        *"--dhcp-range=${DHCP_START},${DHCP_END},${DHCP_LEASE}"*) return 0 ;;
+        *"--listen-address=$LAN_IP "*|*"--listen-address=$LAN_IP") return 0 ;;
     esac
+    return 1
+}
+
+# DNS only: no --dhcp-range, so dnsmasq never touches port 67. Used when the
+# system's own DHCP server holds that port (Android 10+ serves WiFi Direct and
+# local-only hotspots from system_server).
+run_dnsmasq_dns_only() {
+    IF="$1"
+    rm -f "$PIDFILE"
+    dnsmasq \
+        --interface="$IF" \
+        --except-interface=lo \
+        --bind-interfaces \
+        --listen-address="$LAN_IP" \
+        --no-resolv \
+        --server="$UPSTREAM_DNS" \
+        --server="$UPSTREAM_DNS2" \
+        --user=root \
+        --pid-file="$PIDFILE" \
+        --log-facility="$LOGFILE" \
+        --conf-file= \
+        >>"$LOGFILE" 2>&1 || return 1
+    dnsmasq_pid >/dev/null || { sleep 1; dnsmasq_pid >/dev/null; }
+}
+
+start_dnsmasq_dns_only() {
+    IF="$1"
+    if P=$(dnsmasq_pid); then
+        log "a dnsmasq of ours is already running (pid $P) - leaving it alone"
+        return 0
+    fi
+    mkdir -p "$STATE_DIR"
+    kill_foreign_dnsmasq
+    log "starting dnsmasq DNS-only on $IF ($LAN_IP:53, no DHCP)"
+    if run_dnsmasq_dns_only "$IF"; then
+        log "dnsmasq started (DNS only)"
+        return 0
+    fi
+    log "ERROR: dnsmasq refused DNS-only mode too ($(tail -n 1 "$LOGFILE" 2>/dev/null))"
     return 1
 }
 
@@ -558,6 +668,7 @@ start() {
 
     configure_lan_address
     relax_iface
+    install_policy_routing
     remove_legacy_rules "$WAN"
     log "NAT: $LAN_SUBNET -> $WAN"
     install_chains "$WAN"
@@ -566,6 +677,18 @@ start() {
     if start_dnsmasq "$LAN_IF"; then
         DHCP_OWNER=ours
         block_foreign_dhcp
+    elif foreign_dnsmasq_running; then
+        unblock_foreign_dhcp
+        DHCP_OWNER=android
+        log "Android's dnsmasq owns DHCP and DNS on $LAN_IF; portal rules stay in place"
+    elif start_dnsmasq_dns_only "$LAN_IF"; then
+        # Android 10+ serves DHCP for a WiFi Direct / local-only-hotspot interface
+        # from inside system_server - no dnsmasq process to detect or replace. We
+        # must still own port 53, or the client's probe cannot resolve and the
+        # sign-in sheet never appears.
+        unblock_foreign_dhcp
+        DHCP_OWNER=ours-dns
+        log "port 67 is held by the system's own DHCP server; our dnsmasq serves DNS only"
     else
         unblock_foreign_dhcp
         restore_android_dhcp
@@ -599,6 +722,7 @@ ensure_jump_first() {
 keepalive() {
     [ -f "$RUNTIME_FILE" ] && . "$RUNTIME_FILE"
     relax_iface
+    install_policy_routing
     ensure_jump_first nat PREROUTING HS_NAT
     ensure_jump_first filter FORWARD HS_FWD
     ensure_jump_first filter INPUT HS_IN
@@ -652,6 +776,7 @@ stop() {
     WAN=$(resolve_wan)
     unblock_foreign_dhcp
     remove_legacy_rules "$WAN"
+    remove_policy_routing
 
     delete_all nat PREROUTING -j HS_NAT
     delete_all filter FORWARD -j HS_FWD
@@ -774,8 +899,13 @@ status() {
     echo "ip_forward         : $(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null)"
     if P=$(dnsmasq_pid); then echo "dnsmasq            : running (pid $P)"; else echo "dnsmasq            : stopped"; fi
     if foreign_dnsmasq_running; then echo "android dnsmasq    : running"; else echo "android dnsmasq    : stopped"; fi
+    echo "-- policy routing (ip rule) --"
+    ip rule show 2>/dev/null | grep -E "iif $LAN_IF|to $LAN_SUBNET" \
+        || echo "(none of ours - forwarded traffic may hit Android's unreachable rule)"
     echo "-- runtime --"
     [ -f "$RUNTIME_FILE" ] && cat "$RUNTIME_FILE"
+    echo "-- dhcp / ap processes --"
+    procs
     echo "-- nat HS_NAT --"
     iptables -t nat -S HS_NAT 2>/dev/null
     echo "-- filter HS_FWD --"
@@ -788,14 +918,83 @@ status() {
     [ -f "$HOSTS_FILE" ] && cat "$HOSTS_FILE"
 }
 
+# Just the policy-routing rules, so the app can (re)apply them on its own after an
+# interface change without a full start.
+route_only() {
+    LAN_IF="${1:-$LAN_IF}"
+    LAN_SUBNET="${2:-$LAN_SUBNET}"
+    [ -n "$LAN_IF" ] || die "usage: route <lan_if> <subnet>"
+    log "ensuring policy routing for $LAN_IF / $LAN_SUBNET"
+    install_policy_routing
+    echo "-- ip rule --"
+    ip rule show 2>/dev/null
+}
+
+# "yes" when a DHCP server that is not ours is running. The app's watchdog uses
+# this to explain a client stuck on "Obtaining IP address".
+foreign_dhcp() {
+    if foreign_dnsmasq_running; then echo "yes"; else echo "no"; fi
+}
+
+# Every DHCP / AP daemon with its full command line: which one owns port 67, and
+# with what arguments.
+procs() {
+    for proc in /proc/[0-9]*; do
+        pid=${proc#/proc/}
+        cmdline=$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null) || continue
+        [ -n "$cmdline" ] || continue
+        case "$cmdline" in
+            *hostapd*|*wpa_supplicant*|*netshare_ap*) echo "$pid: $cmdline" ;;
+            *) if is_dnsmasq_cmd "$cmdline"; then echo "$pid: $cmdline"; fi ;;
+        esac
+    done
+}
+
+# Everything the debugger asks for in one go. Read-only: it changes no state.
+diag() {
+    status
+    echo "-- interfaces --"
+    ip -o link show 2>/dev/null
+    echo "-- addresses --"
+    ip -o -4 addr show 2>/dev/null
+    echo "-- routes (main) --"
+    ip route show 2>/dev/null
+    echo "-- all ip rules --"
+    ip rule show 2>/dev/null
+    echo "-- counters: HS_FWD --"
+    iptables -t filter -L HS_FWD -v -n -x 2>/dev/null
+    echo "-- counters: HS_NAT --"
+    iptables -t nat -L HS_NAT -v -n -x 2>/dev/null
+    echo "-- counters: HS_IN --"
+    iptables -t filter -L HS_IN -v -n -x 2>/dev/null
+    echo "-- nat POSTROUTING --"
+    iptables -t nat -S POSTROUTING 2>/dev/null
+    echo "-- leases (ours) --"
+    cat "$LEASEFILE" 2>/dev/null
+    echo "-- leases (android) --"
+    cat /data/misc/dhcp/dnsmasq.leases /data/misc/dhcp/dnsmasq.tether.leases 2>/dev/null
+    echo "-- arp --"
+    cat /proc/net/arp 2>/dev/null
+    echo "-- netshare ap runtime --"
+    cat "$STATE_DIR/netshare.runtime" 2>/dev/null || echo "(netshare_ap.sh has not been used)"
+    echo "-- dnsmasq log (tail) --"
+    tail -n 25 "$LOGFILE" 2>/dev/null
+    echo "-- shaper --"
+    sh "$(dirname "$0")/bandwidth_control.sh" list 2>/dev/null
+}
+
 case "${1:-}" in
-    start)       start ;;
-    stop)        stop ;;
-    status)      status ;;
-    keepalive)   keepalive ;;
-    authorize)   authorize "${2:-}" "${3:-}" "${4:-}" ;;
-    deauthorize) deauthorize "${2:-}" ;;
-    reserve)     reserve "${2:-}" "${3:-}" ;;
-    unreserve)   unreserve "${2:-}" ;;
-    *) echo "usage: $0 {start|stop|status|keepalive|authorize <mac> <ip> [cur_ip]|deauthorize <mac>|reserve <mac> <ip>|unreserve <mac>}" ;;
+    start)        start ;;
+    stop)         stop ;;
+    status)       status ;;
+    keepalive)    keepalive ;;
+    authorize)    authorize "${2:-}" "${3:-}" "${4:-}" ;;
+    deauthorize)  deauthorize "${2:-}" ;;
+    reserve)      reserve "${2:-}" "${3:-}" ;;
+    unreserve)    unreserve "${2:-}" ;;
+    route)        route_only "${2:-}" "${3:-}" ;;
+    foreign-dhcp) foreign_dhcp ;;
+    procs)        procs ;;
+    diag)         diag ;;
+    *) echo "usage: $0 {start|stop|status|keepalive|diag|route <lan_if> <subnet>|foreign-dhcp|procs|authorize <mac> <ip> [cur_ip]|deauthorize <mac>|reserve <mac> <ip>|unreserve <mac>}" ;;
 esac
