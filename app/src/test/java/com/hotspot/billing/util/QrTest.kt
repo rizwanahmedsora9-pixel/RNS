@@ -59,15 +59,15 @@ class QrTest {
         val l2 = run(m, minX + l1, minY, dark = false, dx = 1, dy = 0) // ~1
         val l3 = run(m, minX + l1 + l2, minY, dark = true, dx = 1, dy = 0) // ~1
         val u = l1 / 7.0
-        assertTrue("gap $l2 vs unit $u", l2 in 0.6 * u..1.4 * u)
-        assertTrue("timing start $l3 vs unit $u", l3 in 0.6 * u..1.4 * u)
+        assertTrue("gap $l2 vs unit $u", l2.toDouble() in 0.6 * u..1.4 * u)
+        assertTrue("timing start $l3 vs unit $u", l3.toDouble() in 0.6 * u..1.4 * u)
         // The other two corners of the bounding box carry the same 7-module
         // dark run in both directions.
-        assertTrue("top-left column", run(m, minX, minY, dark = true, dx = 0, dy = 1) in 5.6 * u..8.4 * u)
-        assertTrue("top-right row", run(m, maxX, minY, dark = true, dx = -1, dy = 0) in 5.6 * u..8.4 * u)
-        assertTrue("top-right column", run(m, maxX, minY, dark = true, dx = 0, dy = 1) in 5.6 * u..8.4 * u)
-        assertTrue("bottom-left row", run(m, minX, maxY, dark = true, dx = 1, dy = 0) in 5.6 * u..8.4 * u)
-        assertTrue("bottom-left column", run(m, minX, maxY, dark = true, dx = 0, dy = -1) in 5.6 * u..8.4 * u)
+        assertTrue("top-left column", run(m, minX, minY, dark = true, dx = 0, dy = 1).toDouble() in 5.6 * u..8.4 * u)
+        assertTrue("top-right row", run(m, maxX, minY, dark = true, dx = -1, dy = 0).toDouble() in 5.6 * u..8.4 * u)
+        assertTrue("top-right column", run(m, maxX, minY, dark = true, dx = 0, dy = 1).toDouble() in 5.6 * u..8.4 * u)
+        assertTrue("bottom-left row", run(m, minX, maxY, dark = true, dx = 1, dy = 0).toDouble() in 5.6 * u..8.4 * u)
+        assertTrue("bottom-left column", run(m, minX, maxY, dark = true, dx = 0, dy = -1).toDouble() in 5.6 * u..8.4 * u)
     }
 
     @Test
