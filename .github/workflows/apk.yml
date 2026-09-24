@@ -55,9 +55,9 @@ jobs:
 
       # The GitHub runner images ship the Android SDK; use it rather than
       # re-downloading a second copy of the command-line tools.
-      - name: Locate the Android SDK
+      - name: Locate Android SDK and record toolchain
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
           SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
           echo "SDK root: $SDK"
           if command -v sdkmanager > /dev/null 2>&1; then
@@ -66,13 +66,20 @@ jobs:
             SM="$SDK/cmdline-tools/latest/bin/sdkmanager"
           else
             echo "::error::no sdkmanager found (looked on PATH and in $SDK/cmdline-tools/latest/bin)"
-            find "$SDK" -maxdepth 2 -type d 2>/dev/null | head -30
+            find "$SDK" -maxdepth 3 -type d 2>/dev/null | head -80
             exit 1
           fi
           echo "SDKMANAGER_BIN=$SM" >> "$GITHUB_ENV"
-          java -version 2>&1 | head -2
-          "$SM" --version 2>&1 | head -2 || true
-          echo "installed platforms:"; ls "$SDK/platforms" 2>/dev/null || true
+          {
+            echo '=== toolchain ==='
+            date -u
+            uname -a
+            java -version
+            "$SM" --version || true
+            ./gradlew --version || true
+            echo '=== sdk packages ==='
+            "$SM" --list_installed || true
+          } 2>&1 | tee toolchain.txt
 
       - name: Install the Android platform this project compiles against
         run: |
@@ -144,16 +151,42 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Upload reports
+      # Always keep enough information to diagnose failures, including failures
+      # before an APK exists. This prevents the old "failed, but no useful log"
+      # situation: Gradle output, test XML/HTML, lint, SDK inventory and runner
+      # tool versions travel together in one artifact.
+      - name: Collect diagnostics and toolchain inventory
+        if: always()
+        run: |
+          set +e
+          mkdir -p diagnostics
+          cp -f toolchain.txt diagnostics/ 2>/dev/null || true
+          cp -f gradle.log diagnostics/ 2>/dev/null || true
+          env | sort > diagnostics/environment.txt
+          git status --short > diagnostics/git-status.txt
+          find app/build -maxdepth 5 -type f \( -name '*.xml' -o -name '*.html' -o -name '*.txt' -o -name '*.json' \) -print > diagnostics/build-files.txt 2>/dev/null || true
+          find app/build/reports app/build/test-results -type f -maxdepth 8 -print 2>/dev/null | while read -r f; do
+            mkdir -p "diagnostics/$(dirname "$f" | sed 's#^app/build/##')"
+            cp -f "$f" "diagnostics/$(dirname "$f" | sed 's#^app/build/##')/" 2>/dev/null || true
+          done
+          {
+            echo '=== failure summary ==='
+            grep -RInE 'FAILURE|What went wrong|^e: |error:|FAILED|Exception|Caused by:' diagnostics app/build 2>/dev/null | tail -200 || true
+          } > diagnostics/failure-summary.txt
+
+      - name: Upload complete build diagnostics
         if: always()
         uses: actions/upload-artifact@v5
         with:
-          name: reports-${{ github.run_number }}
+          name: apk-diagnostics-${{ github.run_number }}
           path: |
-            app/build/reports/lint-results-debug.html
-            app/build/reports/tests/testDebugUnitTest
-          if-no-files-found: ignore
-          retention-days: 14
+            diagnostics/**
+            gradle.log
+            toolchain.txt
+            app/build/reports/**
+            app/build/test-results/**
+          if-no-files-found: warn
+          retention-days: 30
 
       # Runner log storage is not always reachable from restricted networks, so
       # mirror the interesting failure lines into the run annotations as well.
