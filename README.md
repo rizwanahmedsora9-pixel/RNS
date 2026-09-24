@@ -181,7 +181,7 @@ rate limit on `/redeem`.
 
 _Regenerated automatically by `.github/workflows/readme.yml` — edit anything outside the markers instead._
 
-**2** open · **8** merged · **0** closed without merging · updated 2026-09-24 08:52 UTC
+**2** open · **8** merged · **0** closed without merging · updated 2026-09-24 08:55 UTC
 
 | PR | Title | Author | Branch | State | Updated |
 | --- | --- | --- | --- | --- | --- |
