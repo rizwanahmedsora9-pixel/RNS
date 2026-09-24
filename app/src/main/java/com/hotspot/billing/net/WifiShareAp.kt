@@ -379,7 +379,7 @@ class WifiShareAp(private val context: Context) {
 
     private fun handleFromGroup(
         group: android.net.wifi.p2p.WifiP2pGroup,
-        before: List<String>,
+        before: Set<String>,
         wantedSsid: String,
         wantedPass: String,
         log: (String) -> Unit
