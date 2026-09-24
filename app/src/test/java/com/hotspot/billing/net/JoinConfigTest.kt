@@ -7,10 +7,10 @@ import org.junit.Test
 class JoinConfigTest {
 
     @Test
-    fun `the fixed passphrase is a valid WPA2-PSK (8..63 printable ASCII)`() {
+    fun `the fixed passphrase is a valid WPA2-PSK (8 to 63 printable ASCII)`() {
         val pass = JoinConfig.FIXED_PASSPHRASE
-        assertTrue("length ${pass.length} outside 8..63", pass.length in 8..63)
-        assertTrue(pass.all { it in 0x20..0x7E })
+        assertTrue("length ${pass.length} outside 8 to 63", pass.length in 8..63)
+        assertTrue(pass.all { it in ' '..'~' }) // printable ASCII
     }
 
     @Test
