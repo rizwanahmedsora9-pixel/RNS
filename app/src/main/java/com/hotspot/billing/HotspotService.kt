@@ -681,7 +681,10 @@ class HotspotService : android.app.Service() {
         state.wanIf = RootShell.defaultRouteInterface()
         writeEnvFromPrefs()
 
-        val res = RootShell.startNetwork()
+        val leaveDhcp = launcher.shouldLeaveAndroidDhcp(lanIf)
+        if (leaveDhcp) log("Android owns DHCP on $lanIf - leaving its dnsmasq running")
+        DhcpManager.noteLeaveAndroidDhcp(leaveDhcp)
+        val res = RootShell.startNetwork(leaveDhcp)
         res.out.forEach { if (it.isNotBlank()) log(it) }
         if (!res.isSuccess) {
             val err = res.err.firstOrNull { it.isNotBlank() }?.trim() ?: "unknown error"
@@ -1058,7 +1061,7 @@ class HotspotService : android.app.Service() {
         private const val POLL_INTERVAL_MS = 2_000L
         private const val AP_WAIT_MS = 15_000L
         private const val ADDRESS_WAIT_MS = 12_000L
-        private const val RETRY_INTERVAL_MS = 60_000L
+        private const val RETRY_INTERVAL_MS = 20_000L
         private const val DEEP_CHECK_EVERY_TICKS = 8
         private const val MAX_LOG_LINES = 400
         private const val DEVICE_SEEN_UPDATE_MS = 5 * 60_000L

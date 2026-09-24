@@ -526,10 +526,13 @@ section "netshare_ap.sh: root hostapd, no hotspot toggle"
 : > "$LOG"
 $NETSHARE start "RNS-Test" "password123" > "$WORK/out.netshare" 2>&1 \
     || { fail "netshare start exited non-zero"; cat "$WORK/out.netshare"; }
-check "asks the driver for a second interface on the STA radio" 1 "iw dev ccmni0 interface add rnsap0 type __ap"
+# The uplink in this stub is ccmni0 (mobile). That is not a WiFi radio — the
+# Hot 8 log died here (`sta=ccmni0 iw=none`). ap0 already exists, so the script
+# reuses it instead of asking `iw` to add an interface on the mobile uplink.
+check "does not create an AP on the mobile uplink" 0 "iw dev ccmni0 interface add"
 if [ -f "$STATE/netshare_hostapd.conf" ]; then
     conf_ok=1
-    grep -q '^interface=rnsap0$'      "$STATE/netshare_hostapd.conf" || conf_ok=0
+    grep -q '^interface=ap0$'         "$STATE/netshare_hostapd.conf" || conf_ok=0
     grep -q '^ssid=RNS-Test$'          "$STATE/netshare_hostapd.conf" || conf_ok=0
     grep -q '^wpa_passphrase=password123$' "$STATE/netshare_hostapd.conf" || conf_ok=0
     grep -q '^channel=6$'              "$STATE/netshare_hostapd.conf" || conf_ok=0
@@ -544,10 +547,15 @@ if [ -s "$STATE/netshare_hostapd.pid" ] && kill -0 "$(cat "$STATE/netshare_hosta
 else
     fail "hostapd is not running (pidfile: $(cat "$STATE/netshare_hostapd.pid" 2>/dev/null))"
 fi
-if grep -q '^IFACE=rnsap0$' "$WORK/out.netshare" && grep -q '^SSID=RNS-Test$' "$WORK/out.netshare"; then
+if grep -q '^IFACE=ap0$' "$WORK/out.netshare" && grep -q '^SSID=RNS-Test$' "$WORK/out.netshare"; then
     pass "stdout reports the interface and SSID the app parses"
 else
     fail "stdout is not parseable: $(cat "$WORK/out.netshare")"
+fi
+if grep -q "mobile data" "$WORK/out.netshare"; then
+    pass "the log says the mobile uplink is not a WiFi radio"
+else
+    fail "did not explain that the uplink is mobile: $(cat "$WORK/out.netshare")"
 fi
 if [ -f "$STATE/netshare.runtime" ] && grep -q '^MODE=root-hostapd$' "$STATE/netshare.runtime"; then
     pass "netshare.runtime written"
@@ -560,7 +568,12 @@ $NETSHARE start "RNS-Test" "short" > "$WORK/out.short" 2>&1 \
 
 : > "$LOG"
 $NETSHARE stop > "$WORK/out.netstop" 2>&1
-check "stop kills hostapd and removes the interface it created" 1 "iw dev rnsap0 del"
+check "stop does not delete an AP interface this script did not create" 0 "iw dev .* del"
+if grep -q "leaving ap0" "$WORK/out.netstop"; then
+    pass "stop leaves the adopted ap0 in place"
+else
+    fail "stop did not say it was leaving ap0: $(cat "$WORK/out.netstop")"
+fi
 if [ ! -f "$STATE/netshare_hostapd.pid" ] && [ ! -f "$STATE/netshare.runtime" ]; then
     pass "stop cleans up the pidfile and runtime file"
 else

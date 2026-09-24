@@ -92,7 +92,14 @@ object RootShell {
         return root
     }
 
-    fun startNetwork(): Shell.Result = run("sh $SETUP start")
+    /**
+     * @param leaveAndroidDhcp do not kill the framework's tether dnsmasq. On the
+     *   Hot 8, killing it (or holding port 53 so it cannot start) makes
+     *   WifiService tear the softap down.
+     */
+    fun startNetwork(leaveAndroidDhcp: Boolean = false): Shell.Result =
+        if (leaveAndroidDhcp) run("KEEP_ANDROID_DHCP=1 sh $SETUP start")
+        else run("sh $SETUP start")
 
     fun stopNetwork(): Shell.Result = run("sh $SETUP stop")
 

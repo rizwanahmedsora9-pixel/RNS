@@ -113,7 +113,9 @@ object WanDetector {
     }
 
     fun isPotentialLan(name: String): Boolean {
-        val lanPrefixes = listOf("ap", "p2p", "swlan", "softap", "uap", "wlan1", "wlan2", "wifi_ap")
+        val lanPrefixes = listOf(
+            "ap", "rnsap", "p2p", "swlan", "softap", "uap", "wlan1", "wlan2", "wifi_ap"
+        )
         return lanPrefixes.any { name.startsWith(it) } || name == "ap0"
     }
 

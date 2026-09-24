@@ -15,8 +15,13 @@
 #   sh /data/local/tmp/setup_network.sh unreserve   <mac>
 #   sh /data/local/tmp/setup_network.sh route       <lan_if> <subnet>   # policy routing only
 #   sh /data/local/tmp/setup_network.sh foreign-dhcp                    # yes/no
+#   sh /data/local/tmp/setup_network.sh free-dns                        # drop every dnsmasq (port 53)
 #   sh /data/local/tmp/setup_network.sh procs                           # dhcp/ap processes
 #   sh /data/local/tmp/setup_network.sh diag                            # everything, for the debugger
+#
+#   KEEP_ANDROID_DHCP=1 sh ... start
+#       Do not kill Android's tether dnsmasq. On the Hot 8 the framework tears
+#       ap0 down if its own dnsmasq cannot bind, or if it is killed afterwards.
 #
 # CONFIG
 #   Every setting below can be overridden without editing this file by writing
@@ -674,6 +679,30 @@ start() {
     install_chains "$WAN"
     reapply_authorized
 
+    # The Hot 8 (and other Android 9 tether stacks) abort the softap if their
+    # dnsmasq cannot bind, and again if we kill it after the AP is up. When the
+    # AP was started by the framework, wait for its dnsmasq and leave it.
+    if [ "${KEEP_ANDROID_DHCP:-0}" = "1" ]; then
+        log "KEEP_ANDROID_DHCP=1 - waiting for Android's tether dnsmasq instead of replacing it"
+        i=0
+        while [ "$i" -lt 5 ]; do
+            if foreign_dnsmasq_running; then
+                break
+            fi
+            sleep 1
+            i=$((i + 1))
+        done
+        if foreign_dnsmasq_running; then
+            unblock_foreign_dhcp
+            DHCP_OWNER=android
+            log "Android's dnsmasq owns DHCP and DNS on $LAN_IF; portal rules stay in place"
+            write_runtime
+            log "start complete (gateway $LAN_IP, dhcp $DHCP_OWNER)"
+            return 0
+        fi
+        log "Android dnsmasq did not appear within 5s - starting ours"
+    fi
+
     if start_dnsmasq "$LAN_IF"; then
         DHCP_OWNER=ours
         block_foreign_dhcp
@@ -936,6 +965,34 @@ foreign_dhcp() {
     if foreign_dnsmasq_running; then echo "yes"; else echo "no"; fi
 }
 
+# Drop every dnsmasq, including ours. Called only when no AP is up and we are
+# about to ask the framework to start one. A leftover listener on port 53 is
+# why the Hot 8's tether dnsmasq logged "Address already in use" and the
+# framework then ran stopSoftAp.
+free_dns() {
+    if [ "$STATE_DIR" != "/data/local/tmp" ]; then
+        log "free-dns skipped (off-device)"
+        return 0
+    fi
+    if P=$(dnsmasq_pid 2>/dev/null); then
+        log "stopping our dnsmasq (pid $P) so the system tether can bind port 53"
+        kill "$P" 2>/dev/null
+        sleep 1
+        kill -9 "$P" 2>/dev/null
+        rm -f "$PIDFILE"
+    fi
+    for proc in /proc/[0-9]*; do
+        pid=${proc#/proc/}
+        cmdline=$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null) || continue
+        if is_dnsmasq_cmd "$cmdline"; then
+            if kill "$pid" 2>/dev/null; then
+                log "stopped dnsmasq pid $pid"
+            fi
+        fi
+    done
+    log "free-dns complete"
+}
+
 # Every DHCP / AP daemon with its full command line: which one owns port 67, and
 # with what arguments.
 procs() {
@@ -994,7 +1051,8 @@ case "${1:-}" in
     unreserve)    unreserve "${2:-}" ;;
     route)        route_only "${2:-}" "${3:-}" ;;
     foreign-dhcp) foreign_dhcp ;;
+    free-dns)     free_dns ;;
     procs)        procs ;;
     diag)         diag ;;
-    *) echo "usage: $0 {start|stop|status|keepalive|diag|route <lan_if> <subnet>|foreign-dhcp|procs|authorize <mac> <ip> [cur_ip]|deauthorize <mac>|reserve <mac> <ip>|unreserve <mac>}" ;;
+    *) echo "usage: $0 {start|stop|status|keepalive|diag|route <lan_if> <subnet>|foreign-dhcp|free-dns|procs|authorize <mac> <ip> [cur_ip]|deauthorize <mac>|reserve <mac> <ip>|unreserve <mac>}" ;;
 esac

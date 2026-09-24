@@ -55,21 +55,21 @@ workflow artifact — see [CI](#continuous-integration).
 
    | Mode | What it does | Needs the Android hotspot toggle? |
    | --- | --- | --- |
-   | **Automatic** (default) | Tries each method in order and logs every attempt with the reason it failed: `cmd wifi start-softap` (Android 12+) → local-only hotspot → WiFi Direct group → root `hostapd`. | no |
-   | **NetShare (WiFi Direct)** | The phone becomes a WiFi Direct **group owner** — a real AP legacy clients can join, exactly like the NetShare app. Android does not route it, so the app adds the NAT/DHCP/portal itself. | no |
+   | **Automatic** (default) | Turns WiFi on, then tries the method this radio can actually start. Mobile uplink (the Hot 8): system hotspot first, then local-only, WiFi Direct, root hostapd. WiFi uplink: system hotspot last, so it does not disconnect the internet. | no |
+   | **NetShare (WiFi Direct)** | The phone becomes a WiFi Direct **group owner**. Needs WiFi and Location on — while either is off, `createGroup` returns BUSY, which means Direct is disabled, not that another group exists. If Direct still refuses, the system hotspot is tried. | no |
    | **Local-only hotspot** | `WifiManager.startLocalOnlyHotspot()` — an AP the app may create on its own (Android picks the SSID/password; the app reads them back and shows them). | no |
-   | **Root hostapd** | `scripts/netshare_ap.sh`: ask the driver for a second interface (`iw dev … interface add`), run `hostapd` on it. Own SSID/password/channel. | no |
-   | **System hotspot** | The real Android hotspot (`cmd wifi start-softap`, or the toggle). | Android 9/10: yes |
+   | **Root hostapd** | `scripts/netshare_ap.sh`: ask the driver for a second interface and run a CLI `hostapd`. The Hot 8 only has the WiFi HAL binary, which is not that program, so this mode falls through to the system hotspot. | no |
+   | **System hotspot** | The real Android hotspot (`ap0`). Started as root via `startSoftAp` — a normal app is not allowed to call it. Android's own dnsmasq is left running; killing it makes the Hot 8 tear the AP down. | no |
    | **Manual** | Create nothing; wait for an interface to appear and take it over. | yes |
 
-   On Android 9/10 (the Infinix Hot 8) the no-toggle methods need **Location switched ON** and
-   the location permission (Android refuses to create *any* WiFi network without them, and
-   reports it as a generic failure) — the app asks on first start and again from
-   Settings → *Permissions*. If a method fails, the dashboard and the
-   [debugger](#debugger) say which one and why in plain words
-   (`ERROR_INCOMPATIBLE_MODE - … this radio cannot run an AP and a WiFi connection at the same
-   time`). The gateway re-tries every 60 s and takes over the instant an interface appears, so
-   flipping the system toggle later still works.
+   On Android 9 (the Infinix Hot 8, X650C) Automatic does **not** wait for the toggle.
+   `cmd wifi start-softap` does not exist on that build; the app calls the same
+   `startSoftAp` the Settings app calls, as root. It also turns WiFi and Location
+   services on first — WiFi Direct returns BUSY and local-only hotspot is refused
+   while either is off, and a missing Location *permission* throws
+   `SecurityException` instead of a callback. Granting the permission retries
+   immediately. The gateway retries every 20 s and takes over the instant an
+   interface appears, so flipping the system toggle later still works.
 4. When the hotspot comes up the app **keeps the address Android already assigned** (usually `192.168.43.1`). Replacing that with `10.66.0.1` is what left phones spinning on "Obtaining IP address". DHCP offers are sent as broadcasts, because MediaTek radios drop the unicast offer and the client never finishes DHCP. If Android's own DHCP server comes back and the two would fight, the app steps aside and lets the phone hand out addresses — the sign-in page still appears either way. After installing this update, tell users to **forget the Wi-Fi network and join again once**.
 5. **Vouchers** tab: pick a preset (1 Hour / 3 Hours / 1 Day / 7 Days) or fill in plan name, duration and speeds, then *Generate*. Codes are copyable/shareable straight from the dialog; the list filters by status and each row can be expired or deleted.
 6. **Users** tab: everyone currently on the LAN (online *with* a voucher vs *waiting at the portal*), saved user profiles - a name/phone/note per device MAC, recorded automatically the first time a device is seen - and session history.
@@ -181,10 +181,11 @@ rate limit on `/redeem`.
 
 _Regenerated automatically by `.github/workflows/readme.yml` — edit anything outside the markers instead._
 
-**0** open · **7** merged · **0** closed without merging · updated 2026-09-24 04:17 UTC
+**1** open · **7** merged · **0** closed without merging · updated 2026-09-24 05:24 UTC
 
 | PR | Title | Author | Branch | State | Updated |
 | --- | --- | --- | --- | --- | --- |
+[#8](https://github.com/rizwanahmedsora9-pixel/RNS/pull/8) | Start the Hot 8 hotspot as root so the gateway leaves WAITING_AP | @arena-ai-coding-agent[bot] | `arena/01a0d1b5-rns` | 🟢 open | 2026-09-24
 [#7](https://github.com/rizwanahmedsora9-pixel/RNS/pull/7) | fix(build): repair Kotlin nullability errors blocking APK build | @arena-ai-coding-agent[bot] | `arena/01a0d192-rns` | 🟣 merged | 2026-09-24
 [#6](https://github.com/rizwanahmedsora9-pixel/RNS/pull/6) | CI: preserve Android toolchain and build diagnostics | @arena-ai-coding-agent[bot] | `arena/01a0d189-rns` | 🟣 merged | 2026-09-24
 [#5](https://github.com/rizwanahmedsora9-pixel/RNS/pull/5) | Master rebuild: stable NetShare engine (Phases 0-9) — fix Obtaining IP | @arena-ai-coding-agent[bot] | `arena/01a0d142-rns` | 🟣 merged | 2026-09-24

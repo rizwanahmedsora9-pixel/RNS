@@ -686,9 +686,12 @@ class MainActivity : AppCompatActivity() {
         AppLog.i(AppLog.TAG_UI, "permission result: $granted")
         val denied = granted.filterNot { it.second }.map { it.first }
         toast(
-            if (denied.isEmpty()) "Permissions granted - NetShare-style sharing can now work"
-            else "Denied: ${denied.joinToString()}. The system hotspot toggle still works without them."
+            if (denied.isEmpty()) "Permissions granted - retrying the hotspot now"
+            else "Denied: ${denied.joinToString()}. The system hotspot still works without them."
         )
+        // The first attempt already failed with SecurityException. A grant does
+        // not retry by itself; the Hot 8 log sat in WAITING_AP after this.
+        if (denied.isEmpty()) withService { it.retryAp() }
     }
 
     private fun openTetherSettings() {

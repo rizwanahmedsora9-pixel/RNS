@@ -38,21 +38,34 @@ AP_PREFIX="${HOTSPOT_NETSHARE_PREFIX:-24}"
 MAX_STA="${HOTSPOT_NETSHARE_MAX_STA:-32}"
 
 log() { echo "[netshare_ap] $*"; }
-err() { echo "[netshare_ap] ERROR: $*" >&2; }
-die() { echo "[netshare_ap] ERROR: $*" >&2; exit 1; }
+err() { echo "[netshare_ap] ERROR: $*"; echo "[netshare_ap] ERROR: $*" >&2; }
+# stdout as well as stderr: the debugger on the Hot 8 showed "exit 1" and the
+# discovery lines, and dropped the stderr-only reason.
+die() { echo "[netshare_ap] ERROR: $*"; echo "[netshare_ap] ERROR: $*" >&2; exit 1; }
 
 # ------------------------------------------------------------------ discovery
 
-# The interface the phone is using for internet. That is the radio we ask for a
-# second interface on (a different radio would need a different channel).
-find_sta_interface() {
-    STA=$(ip route show default 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -n 1)
-    if [ -z "$STA" ]; then
-        for candidate in wlan0 wlan1 eth0 ccmni0; do
-            if [ -d "/sys/class/net/$candidate" ]; then STA="$candidate"; break; fi
-        done
-    fi
-    echo "$STA"
+# ccmni0 / rmnet* are the mobile uplink. `iw dev ccmni0` cannot create an AP,
+# and that is exactly what the Hot 8 log did (sta=ccmni0, then exit 1).
+is_mobile_iface() {
+    case "$1" in
+        ccmni*|rmnet*|ccemni*|pdp*|ppp*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# The WiFi STA radio, if one exists. Independent of the default route: on this
+# phone the default route is ccmni0 while wlan0 is down or absent.
+find_wifi_radio() {
+    for candidate in wlan0 wlan1 swlan0; do
+        if iface_exists "$candidate"; then echo "$candidate"; return 0; fi
+    done
+    for name in $(ip -o link show 2>/dev/null | sed -n 's/^[0-9]*: \([^:@ ]*\).*/\1/p'); do
+        case "$name" in
+            wlan*|swlan*) echo "$name"; return 0 ;;
+        esac
+    done
+    echo ""
 }
 
 # The channel the STA is on. A concurrent AP must share it on single-radio chips.
@@ -99,7 +112,10 @@ hostapd_running() {
 }
 
 iface_exists() {
-    [ -d "/sys/class/net/$1" ]
+    [ -d "/sys/class/net/$1" ] && return 0
+    # `ip link` is what the app's own interface scan uses. sysfs is not always
+    # visible to the shell that runs this script, and the self-test has no sysfs.
+    ip link show "$1" 2>/dev/null | grep -q "$1"
 }
 
 write_runtime() {
@@ -201,29 +217,48 @@ start() {
 
     IW=$(find_iw)
     HOSTAPD_BIN=$(find_hostapd)
-    STA=$(find_sta_interface)
-    log "discovered: sta=${STA:-none} iw=${IW:-none} hostapd=${HOSTAPD_BIN:-none}"
-
-    [ -n "$STA" ] || die "no internet-side interface found - connect the phone to WiFi first"
-    [ -n "$HOSTAPD_BIN" ] || die "no hostapd binary on this device (looked in /vendor/bin/hw, /system/bin, /vendor/bin)"
-
-    CHANNEL="$WANT_CHANNEL"
-    if [ -z "$CHANNEL" ]; then
-        CHANNEL=$(find_channel "$STA")
-        log "channel on $STA: ${CHANNEL:-unknown}"
+    RADIO=$(find_wifi_radio)
+    UPLINK=$(ip route show default 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -n 1)
+    log "discovered: radio=${RADIO:-none} uplink=${UPLINK:-none} iw=${IW:-none} hostapd=${HOSTAPD_BIN:-none}"
+    if is_mobile_iface "${UPLINK:-}"; then
+        log "uplink $UPLINK is mobile data - it is not a WiFi radio, and an AP is not created on it"
     fi
 
-    # 1. An interface we can put an AP on. Prefer one that already exists
-    #    (p2p0 / ap0 / wlan1) over creating one - creating needs driver support.
+    case "$HOSTAPD_BIN" in
+        ""|HAL:*)
+            die "no CLI hostapd on this phone (${HOSTAPD_BIN:-none}). /vendor/bin/hw/hostapd is the WiFi HAL, not a program that accepts a config file. The system hotspot (ap0) is the path here."
+            ;;
+    esac
+
+    CHANNEL="$WANT_CHANNEL"
+    if [ -z "$CHANNEL" ] && [ -n "$RADIO" ]; then
+        CHANNEL=$(find_channel "$RADIO")
+        log "channel on $RADIO: ${CHANNEL:-unknown}"
+    fi
+    if [ -z "$CHANNEL" ]; then
+        # A mobile uplink has no WiFi channel. Channel 6 is 2.4 GHz, which is
+        # what client phones can join. Leaving it empty made hostapd exit.
+        CHANNEL=6
+        log "no WiFi channel to share - using 2.4GHz channel 6"
+    fi
+
+    # An interface that already exists, even if it is DOWN. The Hot 8 keeps
+    # rnsap0 / p2p0 / ap0 around after a previous run; requiring them to be UP
+    # meant we ignored them and then died because `iw` is not installed.
     NEW_IF=""
     CREATED=0
-    for candidate in "$IFACE_NAME" p2p0 ap0 wlan1 softap0 swlan0; do
-        if iface_exists "$candidate" ] && [ "$candidate" != "$STA" ]; then
-            STATE=$(ip -o link show "$candidate" 2>/dev/null)
+    for candidate in "$IFACE_NAME" p2p0 p2p-wlan0-0 ap0 ap1 wlan1 softap0 swlan0; do
+        [ "$candidate" = "$RADIO" ] && continue
+        is_mobile_iface "$candidate" && continue
+        if iface_exists "$candidate"; then
+            STATE=$(ip link show "$candidate" 2>/dev/null)
             case "$STATE" in
-                *UP*) NEW_IF="$candidate"; CREATED=0; log "reusing the existing AP-capable interface $candidate";;
+                *UP*) log "reusing the existing AP interface $candidate (already up)" ;;
+                *)    log "reusing the existing AP interface $candidate (it was down)" ;;
             esac
-            [ -n "$NEW_IF" ] && break
+            NEW_IF="$candidate"
+            CREATED=0
+            break
         fi
     done
 
@@ -231,19 +266,20 @@ start() {
         if [ -z "$IW" ]; then
             die "no usable AP interface ($IFACE_NAME/p2p0/ap0/wlan1) and no 'iw' binary to create one"
         fi
-        log "asking the driver for a second interface: iw dev $STA interface add $IFACE_NAME type __ap"
-        if $IW dev "$STA" interface add "$IFACE_NAME" type __ap 2>>"$HOSTAPD_LOG"; then
+        if [ -z "$RADIO" ]; then
+            die "no WiFi radio (wlan0) to add an interface to, and no AP interface already exists. The uplink (${UPLINK:-none}) is not a WiFi radio."
+        fi
+        log "asking the driver for a second interface: iw dev $RADIO interface add $IFACE_NAME type __ap"
+        if $IW dev "$RADIO" interface add "$IFACE_NAME" type __ap 2>>"$HOSTAPD_LOG"; then
             NEW_IF="$IFACE_NAME"; CREATED=1
             log "driver accepted type __ap"
         else
             log "type __ap refused; trying type managed"
-            if $IW dev "$STA" interface add "$IFACE_NAME" type managed 2>>"$HOSTAPD_LOG"; then
+            if $IW dev "$RADIO" interface add "$IFACE_NAME" type managed 2>>"$HOSTAPD_LOG"; then
                 NEW_IF="$IFACE_NAME"; CREATED=1
                 log "driver accepted type managed (hostapd will try to switch it to AP mode)"
             else
-                die "the WiFi driver refused to create a second interface on $STA - this chip " \
-                    "cannot run an AP and a WiFi connection at the same time. Use the Android " \
-                    "hotspot toggle instead (see the debugger log for the driver's answer)."
+                die "the WiFi driver refused to create a second interface on $RADIO - this chip cannot run an AP and a WiFi connection at the same time. Use the Android hotspot instead."
             fi
         fi
     fi
@@ -315,7 +351,8 @@ status() {
     echo "-- discovery --"
     echo "iw                 : $(find_iw)"
     echo "hostapd            : $(find_hostapd)"
-    echo "sta interface      : $(find_sta_interface)"
+    echo "wifi radio         : $(find_wifi_radio)"
+    echo "uplink             : $(ip route show default 2>/dev/null | sed -n 's/.* dev \\([^ ]*\\).*/\\1/p' | head -n 1)"
 }
 
 case "${1:-}" in

@@ -1,6 +1,9 @@
 package com.hotspot.billing.net
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.wifi.WifiManager
 import android.net.wifi.p2p.WifiP2pConfig
@@ -56,6 +59,13 @@ class WifiShareAp(private val context: Context) {
             log("ap[lohs]: BUG - called on the main thread, refusing (would freeze the UI)")
             return null
         }
+        if (!ApRadio.hasLocationPermission(app)) {
+            log(
+                "ap[lohs]: skipped - Location permission is not granted. " +
+                    "startLocalOnlyHotspot throws SecurityException (Coarse Location) instead of a callback."
+            )
+            return null
+        }
         val wifi = app.getSystemService(Context.WIFI_SERVICE) as? WifiManager
         if (wifi == null) {
             log("ap[lohs]: no WifiManager on this device")
@@ -63,7 +73,8 @@ class WifiShareAp(private val context: Context) {
         }
         log("ap[lohs]: wifi enabled=${wifi.isWifiEnabled} - requesting a local-only hotspot")
         if (!wifi.isWifiEnabled) {
-            log("ap[lohs]: WiFi is OFF; most drivers refuse to create an AP then")
+            log("ap[lohs]: WiFi is OFF - not calling startLocalOnlyHotspot (the driver refuses, and the error is generic)")
+            return null
         }
 
         val before = interfaceNames()
@@ -211,13 +222,39 @@ class WifiShareAp(private val context: Context) {
 
     // ------------------------------------------------------------------ WiFi Direct (NetShare)
 
-    fun startWifiDirect(ssid: String?, pass: String?, log: (String) -> Unit): ApHandle? {
+    fun startWifiDirect(ssid: String?, pass: String?, log: (String) -> Unit): ApHandle? =
+        startWifiDirect(ssid, pass, log, attempt = 0)
+
+    private fun startWifiDirect(
+        ssid: String?,
+        pass: String?,
+        log: (String) -> Unit,
+        attempt: Int
+    ): ApHandle? {
         if (isMainThread()) {
             log("ap[p2p]: BUG - called on the main thread, refusing (would freeze the UI)")
             return null
         }
+        if (!ApRadio.hasLocationPermission(app)) {
+            log("ap[p2p]: skipped - Location permission is not granted")
+            return null
+        }
+        val wifi = app.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+        if (wifi != null && !wifi.isWifiEnabled) {
+            log(
+                "ap[p2p]: skipped - WiFi is off. " +
+                    ApPlan.p2pBusyHint(wifiEnabled = false, locationPermission = true, locationServicesOn = true)
+            )
+            return null
+        }
         if (!app.packageManager.hasSystemFeature(PackageManager.FEATURE_WIFI_DIRECT)) {
             log("ap[p2p]: this device does not advertise android.hardware.wifi.direct - trying anyway")
+        }
+        // A channel opened while WiFi Direct was disabled keeps answering BUSY
+        // after the radio comes up. Always open a fresh one.
+        p2pChannel = null
+        if (!waitForP2pEnabled(log)) {
+            log("ap[p2p]: WiFi Direct did not report enabled - trying createGroup anyway")
         }
         val manager = app.getSystemService(Context.WIFI_P2P_SERVICE) as? WifiP2pManager
         if (manager == null) {
@@ -284,6 +321,25 @@ class WifiShareAp(private val context: Context) {
         if (failure != -1) {
             log("ap[p2p]: FAILED - ${p2pFailure(failure)}")
             hintForP2pFailure(failure, log)
+            if (failure == WifiP2pManager.BUSY) {
+                val existing = requestGroup(channel, log)
+                if (existing != null && existing.isGroupOwner) {
+                    log("ap[p2p]: BUSY because a group already exists - adopting it")
+                    return handleFromGroup(existing, before, wantedSsid, wantedPass, log)
+                }
+                if (attempt == 0) {
+                    log("ap[p2p]: no existing group - dropping the channel and retrying once")
+                    p2pChannel = null
+                    try {
+                        Thread.sleep(1_500)
+                    } catch (e: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        return null
+                    }
+                    return startWifiDirect(ssid, pass, log, attempt = 1)
+                }
+                log("ap[p2p]: still BUSY with no group. WiFi Direct is disabled, not held by another app.")
+            }
             return null
         }
 
@@ -319,6 +375,80 @@ class WifiShareAp(private val context: Context) {
             detail = "WiFi Direct group on $iface (NetShare-style)",
             onClose = { releaseWifiDirect { } }
         )
+    }
+
+    private fun handleFromGroup(
+        group: android.net.wifi.p2p.WifiP2pGroup,
+        before: List<String>,
+        wantedSsid: String,
+        wantedPass: String,
+        log: (String) -> Unit
+    ): ApHandle? {
+        val realSsid = group.networkName ?: wantedSsid
+        val realPass = group.passphrase ?: wantedPass
+        val wan = try { RootShell.defaultRouteInterface() } catch (e: Throwable) { null }
+        var iface = hiddenInterfaceName(group)
+        if (iface == null) iface = discoverInterface(before, wan, INTERFACE_TIMEOUT_MS, log)
+        else log("ap[p2p]: group reports interface $iface")
+        if (iface == null) {
+            log("ap[p2p]: group exists but no interface appeared")
+            return null
+        }
+        p2pGroupActive = true
+        return ApHandle(
+            kind = ApKind.WIFI_DIRECT,
+            interfaceName = iface,
+            ssid = realSsid,
+            password = realPass,
+            detail = "WiFi Direct group on $iface (adopted)",
+            onClose = { releaseWifiDirect { } }
+        )
+    }
+
+    /**
+     * WIFI_P2P_STATE_CHANGED_ACTION is sticky, so the current state arrives
+     * as soon as we register. createGroup returns BUSY while this is disabled.
+     */
+    private fun waitForP2pEnabled(log: (String) -> Unit): Boolean {
+        val filter = IntentFilter(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION)
+        val latch = java.util.concurrent.CountDownLatch(1)
+        var enabled = false
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                val state = intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1)
+                if (state == WifiP2pManager.WIFI_P2P_STATE_ENABLED) {
+                    enabled = true
+                    latch.countDown()
+                }
+            }
+        }
+        val sticky = try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                app.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                app.registerReceiver(receiver, filter)
+            }
+        } catch (e: Throwable) {
+            log("ap[p2p]: could not listen for WiFi Direct state (${e.message})")
+            return false
+        }
+        val stickyState = sticky?.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1) ?: -1
+        if (stickyState == WifiP2pManager.WIFI_P2P_STATE_ENABLED) enabled = true
+        if (!enabled) {
+            try {
+                latch.await(6, java.util.concurrent.TimeUnit.SECONDS)
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
+        try {
+            app.unregisterReceiver(receiver)
+        } catch (e: Throwable) {
+            // already unregistered
+        }
+        log(if (enabled) "ap[p2p]: WiFi Direct is enabled" else "ap[p2p]: WiFi Direct is still disabled")
+        return enabled
     }
 
     fun releaseWifiDirect(log: (String) -> Unit) {
@@ -443,7 +573,7 @@ class WifiShareAp(private val context: Context) {
         fun p2pFailure(reason: Int): String = when (reason) {
             0 -> "ERROR - the framework refused (often: Location permission or Location services are off)"
             1 -> "P2P_UNSUPPORTED - this device has no WiFi Direct"
-            2 -> "BUSY - the WiFi Direct module is busy (another group/ connection is active)"
+            2 -> "BUSY - WiFi Direct is disabled or not accepting groups (WiFi off, Location off, or a stale channel). Not necessarily another group."
             3 -> "NO_SERVICE_REQUESTS - service discovery was not registered"
             4 -> "NETWORK_ALREADY_CONNECTED - already in a WiFi Direct group"
             else -> "unknown reason $reason"
@@ -465,7 +595,11 @@ class WifiShareAp(private val context: Context) {
                 0 -> log("ap[p2p]: hint - grant Location permission and switch Location ON; " +
                     "Android hides WiFi APIs from apps without it")
                 1 -> log("ap[p2p]: hint - this phone has no WiFi Direct; use the local-only hotspot or the Android toggle")
-                2 -> log("ap[p2p]: hint - WiFi Direct is busy; turn off any cast/print/nearby sharing and retry")
+                2 -> log("ap[p2p]: hint - " + ApPlan.p2pBusyHint(
+                    wifiEnabled = true,
+                    locationPermission = true,
+                    locationServicesOn = true
+                ))
                 4 -> log("ap[p2p]: hint - a WiFi Direct group already exists; it is removed and retried")
                 else -> Unit
             }

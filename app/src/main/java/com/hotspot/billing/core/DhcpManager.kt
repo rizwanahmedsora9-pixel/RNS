@@ -21,6 +21,13 @@ import com.hotspot.billing.util.RootShell
  */
 object DhcpManager {
 
+    /**
+     * Remembered so watchdog restarts do not kill the framework dnsmasq that
+     * is keeping a system softap alive. Not written to hotspot.env.
+     */
+    @Volatile
+    private var leaveAndroidDhcp: Boolean = false
+
     // Default LAN addressing for new installs — but we ADOPT existing address
     // if Android already put one on ap0 (192.168.43.1 etc) to avoid "Obtaining IP"
     const val DEFAULT_GATEWAY = "192.168.49.1"
@@ -49,27 +56,33 @@ object DhcpManager {
     )
 
     /**
-     * Start DHCP server via setup_network.sh
-     * Handles foreign dnsmasq race condition that caused user's log failure:
-     *  - Check foreign dnsmasq before start
-     *  - Kill foreign dnsmasq
-     *  - Start ours
-     *  - If fails (Address already in use), try respawn saved foreign cmdline as fallback
+     * Start DHCP via setup_network.sh.
+     *
+     * On a system softap, [leaveAndroidDhcp] must be true: killing the framework
+     * dnsmasq makes the Hot 8 run stopSoftAp. The flag is passed on the command,
+     * not stored in hotspot.env, and remembered so a watchdog restart does the
+     * same.
      */
-    fun start(lanIf: String): Boolean {
-        AppLog.i(AppLog.TAG_NET, "dhcp: starting on $lanIf")
+    fun noteLeaveAndroidDhcp(leave: Boolean) {
+        leaveAndroidDhcp = leave
+    }
 
-        // Check foreign dnsmasq
+    fun start(lanIf: String, leaveAndroidDhcp: Boolean = this.leaveAndroidDhcp): Boolean {
+        this.leaveAndroidDhcp = leaveAndroidDhcp
+        AppLog.i(AppLog.TAG_NET, "dhcp: starting on $lanIf leaveAndroidDhcp=$leaveAndroidDhcp")
+
         val foreignBefore = try {
             RootShell.isForeignDnsmasqRunning()
         } catch (e: Throwable) {
             false
         }
-        if (foreignBefore) {
+        if (foreignBefore && !leaveAndroidDhcp) {
             AppLog.w(AppLog.TAG_NET, "dhcp: foreign dnsmasq detected before start, will be killed by setup_network.sh")
+        } else if (foreignBefore) {
+            AppLog.i(AppLog.TAG_NET, "dhcp: Android dnsmasq is up - leaving it (killing it tears the softap down)")
         }
 
-        val result = RootShell.startNetwork()
+        val result = RootShell.startNetwork(leaveAndroidDhcp)
         if (!result.isSuccess) {
             AppLog.e(AppLog.TAG_NET, "dhcp: setup_network.sh start failed exit=${result.code}")
             // Try keepalive as repair
@@ -136,7 +149,7 @@ object DhcpManager {
         AppLog.w(AppLog.TAG_NET, "dhcp: keepalive failed, doing full stop/start")
         stop()
         Thread.sleep(1000)
-        return start(lanIf)
+        return start(lanIf, leaveAndroidDhcp)
     }
 
     fun reserve(mac: String, ip: String): Boolean {
