@@ -78,7 +78,7 @@ class SetupHotspotActivity : AppCompatActivity() {
         modeGroup.setOnCheckedChangeListener { _, _ -> updateModeInfo(selectedMode()) }
 
         wireDetect()
-        findViewById<Button>(R.id.hs_debugger).setOnClickListener { openDebugger() }
+        findViewById<TextView>(R.id.hs_debugger).setOnClickListener { openDebugger() }
         findViewById<Button>(R.id.btn_hs_back).setOnClickListener { finish() }
         findViewById<Button>(R.id.btn_hs_next).setOnClickListener { next() }
 

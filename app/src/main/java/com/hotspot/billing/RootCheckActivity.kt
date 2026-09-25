@@ -63,7 +63,7 @@ class RootCheckActivity : AppCompatActivity() {
         val wizard = !SetupFlow.isSetupComplete(SetupFlow.setupPrefs(this))
         stepView.text = if (wizard) "STEP 1 OF 4" else "CHECK BEFORE EVERY START"
 
-        findViewById<Button>(R.id.root_debugger).setOnClickListener { openDebugger() }
+        findViewById<TextView>(R.id.root_debugger).setOnClickListener { openDebugger() }
         btnContinue.setOnClickListener {
             AppLog.i(AppLog.TAG_UI, "setup: root confirmed - Continue tapped")
             val target = SetupFlow.nextAfterRootCheck(this)
@@ -116,7 +116,7 @@ class RootCheckActivity : AppCompatActivity() {
             btnRetry.isEnabled = true
 
             if (ok == true) {
-                paintBox(ContextCompat.getColor(this, R.color.green))
+                paintBox(ContextCompat.getColor(this@RootCheckActivity, R.color.green))
                 titleView.text = "Root confirmed"
                 detailView.text =
                     "This app runs the whole gateway (NAT, DHCP, firewall, portal, bandwidth " +
@@ -125,7 +125,7 @@ class RootCheckActivity : AppCompatActivity() {
                 btnRetry.visibility = View.GONE
                 AppLog.i(AppLog.TAG_UI, "setup: root CONFIRMED - the Continue button is enabled")
             } else {
-                paintBox(ContextCompat.getColor(this, R.color.red))
+                paintBox(ContextCompat.getColor(this@RootCheckActivity, R.color.red))
                 titleView.text = if (ok == null) "Root check timed out" else "No root access"
                 detailView.text =
                     if (ok == null)

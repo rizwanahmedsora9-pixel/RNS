@@ -47,6 +47,7 @@ class SplashActivity : AppCompatActivity() {
         try {
             statusView = findViewById(R.id.splash_status)
             val version = findViewById<TextView>(R.id.splash_version)
+            findViewById<Button>(R.id.splash_debugger).setOnClickListener { openDebugger() }
             version.text = "v${appVersion()}  ·  ${Build.MANUFACTURER} ${Build.MODEL}  ·  Android ${Build.VERSION.RELEASE}"
 
             val crashBox = findViewById<TextView>(R.id.splash_crash)

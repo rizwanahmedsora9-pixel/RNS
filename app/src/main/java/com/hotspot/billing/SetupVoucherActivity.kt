@@ -77,7 +77,7 @@ class SetupVoucherActivity : AppCompatActivity() {
             override fun afterTextChanged(s: android.text.Editable?) { updatePreview() }
         })
 
-        findViewById<Button>(R.id.vz_debugger).setOnClickListener { openDebugger() }
+        findViewById<TextView>(R.id.vz_debugger).setOnClickListener { openDebugger() }
         findViewById<Button>(R.id.btn_vz_back).setOnClickListener { finish() }
         findViewById<Button>(R.id.btn_vz_next).setOnClickListener { next() }
 

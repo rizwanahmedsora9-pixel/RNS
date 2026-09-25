@@ -53,7 +53,7 @@ class SetupStartActivity : AppCompatActivity() {
         btnStart.setOnClickListener { start() }
 
         wireBack()
-        findViewById<Button>(R.id.st_debugger).setOnClickListener { openDebugger() }
+        findViewById<TextView>(R.id.st_debugger).setOnClickListener { openDebugger() }
         findViewById<Button>(R.id.btn_start_back).setOnClickListener { finish() }
 
         AppLog.i(
