@@ -44,14 +44,43 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
 
+        <!--
+          The launcher is the splash, not the dashboard: the app must always
+          open onto a screen, even when something went wrong before - the
+          splash shows the previous run's crash and never dies on its own.
+          From there: root check (every launch) -> wizard (first run) or
+          dashboard (already set up).
+        -->
         <activity
-            android:name=".MainActivity"
+            android:name=".SplashActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="false" />
+
+        <!-- The onboarding wizard, one screen per step. -->
+        <activity
+            android:name=".RootCheckActivity"
+            android:exported="false"
+            android:label="Root check" />
+        <activity
+            android:name=".SetupHotspotActivity"
+            android:exported="false"
+            android:label="Setup - hotspot" />
+        <activity
+            android:name=".SetupVoucherActivity"
+            android:exported="false"
+            android:label="Setup - vouchers" />
+        <activity
+            android:name=".SetupStartActivity"
+            android:exported="false"
+            android:label="Setup - start" />
 
         <!-- The debugger: live log tail, watchdog findings, and the one-tap full
              diagnostic report that gets copied or shared. Reachable from the

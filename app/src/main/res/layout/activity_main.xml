@@ -707,6 +707,13 @@
                     android:text="@string/btn_open_tether" />
 
                 <Button
+                    android:id="@+id/btn_setup"
+                    style="@style/BtnOutline"
+                    android:layout_width="match_parent"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/btn_setup" />
+
+                <Button
                     android:id="@+id/btn_debug_settings"
                     style="@style/BtnOutline"
                     android:layout_width="match_parent"

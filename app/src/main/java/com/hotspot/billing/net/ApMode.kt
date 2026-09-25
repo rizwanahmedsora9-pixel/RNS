@@ -177,9 +177,40 @@ object ApConfigText {
         return "DIRECT-$suffix"
     }
 
-    /** WPA2 passphrases are 8..63 printable ASCII characters. */
+    /**
+     * WPA2 SSIDs are 1..32 printable ASCII characters.
+     *
+     * On top of the printable-ASCII restriction, the four characters that can
+     * terminate or escape a quoted shell word are dropped: `"` `` ` `` `$` and
+     * `\`. Every SSID on this codebase ends up in a uid-0 shell command
+     * somewhere (netshare_ap.sh, hostapd conf writing), so this is the single
+     * last-line defence against the F-01 injection - the setup wizard rejects
+     * such characters up front so the operator sees the reason instead of a
+     * silently altered network name.
+     */
+    fun sanitizeSsid(requested: String?, fallback: String = "RNS-Hotspot"): String {
+        val clean = (requested ?: "")
+            .replace(Regex("[^\\x20-\\x7E]"), "")
+            .replace(Regex("""["`$\\]"""), "")
+            .trim()
+            .replace(Regex("\\s{2,}"), " ")
+        return when {
+            clean.length in 1..32 -> clean
+            clean.length > 32 -> clean.take(32)
+            else -> fallback
+        }
+    }
+
+    /**
+     * WPA2 passphrases are 8..63 printable ASCII characters. Same shell
+     * defence as [sanitizeSsid]: the characters that can break out of a
+     * quoted root-shell word are stripped, not trusted to be absent.
+     */
     fun sanitizePassphrase(requested: String?, fallback: String = "hotspot123"): String {
-        val clean = (requested ?: "").replace(Regex("[^\\x20-\\x7E]"), "").trim()
+        val clean = (requested ?: "")
+            .replace(Regex("[^\\x20-\\x7E]"), "")
+            .replace(Regex("""["`$\\]"""), "")
+            .trim()
         return when {
             clean.length in 8..63 -> clean
             clean.length in 1..7 -> clean.padEnd(8, '0')

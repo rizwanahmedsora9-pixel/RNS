@@ -65,6 +65,41 @@ class ApConfigTextTest {
     }
 
     @Test
+    fun `passphrases can never carry shell escape characters into the root shell`() {
+        // F-01: the value goes double-quoted into a uid-0 command, so `"` ` $ \
+        // must be stripped even when the input bypasses the wizard's validation.
+        // Short results are padded back into the 8..63 range, so pad too.
+        assertEquals("(reboot)", ApConfigText.sanitizePassphrase("\$(reboot)"))  // $ stripped
+        assertEquals("id000000", ApConfigText.sanitizePassphrase("`id`"))       // backticks stripped
+        assertEquals("abcd0000", ApConfigText.sanitizePassphrase("ab\"cd"))     // quote stripped
+        assertEquals("ab000000", ApConfigText.sanitizePassphrase("a\\b"))       // backslash stripped
+        // A payload that would have run as root now mints an inert password:
+        // nothing that can terminate the quoted shell word survives.
+        val result = ApConfigText.sanitizePassphrase("\$(id > /tmp/pwned)EVIL")
+        assertFalse(result.contains('$'))
+        assertFalse(result.contains('`'))
+        assertFalse(result.contains('"'))
+    }
+
+    @Test
+    fun `SSIDs are capped at 32 and stripped of shell escape characters`() {
+        assertEquals("RNS-Hotspot", ApConfigText.sanitizeSsid("RNS-Hotspot"))
+        assertEquals("RNS-Hotspot", ApConfigText.sanitizeSsid(null))
+        assertEquals("RNS-Hotspot", ApConfigText.sanitizeSsid("   "))
+        assertEquals(32, ApConfigText.sanitizeSsid("x".repeat(80)).length)
+        assertEquals("(id)EVIL", ApConfigText.sanitizeSsid("\$(id)EVIL"))
+        assertEquals("idEVIL", ApConfigText.sanitizeSsid("`id`EVIL"))
+        assertEquals("abcd", ApConfigText.sanitizeSsid("ab\"cd"))
+        assertEquals("abc", ApConfigText.sanitizeSsid("a\\bc"))
+        // The audit's PoC payload: what reaches the netshare_ap.sh argv after
+        // sanitisation carries no `$`, no backtick and no quote.
+        val result = ApConfigText.sanitizeSsid("\$(id > /tmp/pwned2.txt)EVIL")
+        assertFalse(result.contains('$'))
+        assertFalse(result.contains('`'))
+        assertFalse(result.contains('"'))
+    }
+
+    @Test
     fun `the new AP interface is the one that was not there before`() {
         val before = setOf("lo", "wlan0", "ccmni0")
         val after = listOf(

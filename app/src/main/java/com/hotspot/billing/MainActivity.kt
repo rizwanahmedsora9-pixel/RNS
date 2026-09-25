@@ -151,11 +151,15 @@ class MainActivity : AppCompatActivity() {
         requestNotificationPermissionIfNeeded()
         if (!hasWifiSharePermissions()) requestWifiSharePermissions()
 
-        // The gateway starts with the app and survives it being swiped away.
-        startForegroundService(
-            Intent(this, HotspotService::class.java).setAction(HotspotService.ACTION_START)
-        )
-        bindService(Intent(this, HotspotService::class.java), connection, Context.BIND_AUTO_CREATE)
+        // The gateway starts with the app and survives it being swiped away -
+        // but only once the setup wizard has been completed. On a first run the
+        // wizard's Start button is the single point that brings the gateway up,
+        // so the app never starts a half-configured gateway on its own.
+        if (SetupFlow.isSetupComplete(prefs)) {
+            ensureServiceStarted()
+        } else {
+            AppLog.i(AppLog.TAG_UI, "main: setup not complete - not starting the gateway (the wizard's Start will)")
+        }
 
         handler.post(poller)
     }
@@ -223,7 +227,15 @@ class MainActivity : AppCompatActivity() {
         headerPhase = findViewById(R.id.header_phase)
 
         findViewById<Button>(R.id.btn_start).setOnClickListener {
-            withService { it.startSequence() }
+            val service = svc
+            if (service != null) {
+                service.startSequence()
+            } else {
+                // Service not up yet (killed, or the very first start): bring
+                // it up - ACTION_START starts the gateway inside the service,
+                // and the bind brings the live state back to this dashboard.
+                ensureServiceStarted()
+            }
         }
         findViewById<Button>(R.id.btn_stop).setOnClickListener {
             withService { it.stopSequence() }
@@ -623,6 +635,10 @@ class MainActivity : AppCompatActivity() {
             withService { it.restart() }
         }
 
+        findViewById<Button>(R.id.btn_setup).setOnClickListener {
+            AppLog.i(AppLog.TAG_UI, "settings: re-running the setup wizard from the hotspot step")
+            startActivity(Intent(this, SetupHotspotActivity::class.java))
+        }
         findViewById<Button>(R.id.btn_tether).setOnClickListener { openTetherSettings() }
         findViewById<Button>(R.id.btn_debug_settings).setOnClickListener { openDebugger() }
         findViewById<Button>(R.id.btn_permissions).setOnClickListener {
@@ -811,6 +827,32 @@ class MainActivity : AppCompatActivity() {
         val service = svc
         if (service == null) toast("Gateway is still starting - try again in a second")
         else block(service)
+    }
+
+    /**
+     * Brings the gateway service up if it is not running and binds to it so
+     * the dashboard can render state and issue commands. Called on start (after
+     * setup) and from the dashboard's Start button; a failure is logged with
+     * the reason instead of dying.
+     */
+    private fun ensureServiceStarted() {
+        try {
+            startForegroundService(
+                Intent(this, HotspotService::class.java).setAction(HotspotService.ACTION_START)
+            )
+        } catch (e: Throwable) {
+            AppLog.e(AppLog.TAG_UI, "could not start the gateway service", e)
+            toast("Could not start the gateway - open the debugger (error log) for the reason.")
+            return
+        }
+        if (!bound) {
+            try {
+                bindService(Intent(this, HotspotService::class.java), connection, Context.BIND_AUTO_CREATE)
+                bound = true
+            } catch (e: Throwable) {
+                AppLog.e(AppLog.TAG_UI, "could not bind the gateway service", e)
+            }
+        }
     }
 
     private fun copyText(text: String) {
