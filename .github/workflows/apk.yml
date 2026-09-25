@@ -217,10 +217,21 @@ jobs:
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
 
             let tail = '';
+            let errors = '';
             if (!ok) {
               try {
                 const log = fs.readFileSync('gradle.log', 'utf8');
                 tail = log.slice(-6000);
+                // The `e: file.kt:line:col:` lines are the actual cause; the raw
+                // tail is usually just Gradle's internal stack trace. Post both.
+                const errLines = log
+                  .split('\n')
+                  .filter((l) => /^e: |error:|FAILURE|What went wrong|Caused by:|> Task .* FAILED/.test(l.trim()))
+                  .slice(0, 60)
+                  .join('\n');
+                if (errLines) {
+                  errors = '### Compile / test errors\n\n```\n' + errLines + '\n```\n\n';
+                }
               } catch (e) {
                 tail = `(no gradle.log: ${e.message})`;
               }
@@ -239,7 +250,7 @@ jobs:
               '',
               ok
                 ? 'Download from the **Artifacts** section at the bottom of the build log page.'
-                : ['The build did not finish. Gradle output tail:', '', '```', tail, '```'].join('\n'),
+                : [errors, 'The build did not finish. Gradle output tail:', '', '```', tail, '```'].join('\n'),
             ].join('\n');
 
             const { data: comments } = await github.rest.issues.listComments({

@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Screen 1 - the root check, run on every launch. The Continue button exists
+  but is disabled until the check confirms root (RootCheckActivity controls
+  it). Every id below is bound there.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/bg">
+
+    <!-- header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="18dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="10dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/root_step"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="STEP 1 OF 4"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:textColor="@color/accent"
+                android:letterSpacing="0.12" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text="Root check"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:textColor="@color/textPrimary" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/root_debugger"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:text="Debugger"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:textColor="@color/accent"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginStart="18dp"
+        android:layout_marginEnd="18dp"
+        android:background="@color/outline" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="18dp">
+
+            <!-- the result box: coloured by the check outcome -->
+            <LinearLayout
+                android:id="@+id/root_status_box"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@color/accentSoft"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/root_box_title"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Checking root access..."
+                        android:textSize="15sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/textPrimary" />
+
+                    <ProgressBar
+                        android:id="@+id/root_progress"
+                        android:layout_width="20dp"
+                        android:layout_height="20dp" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/root_detail"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Asking Magisk for a uid-0 shell..."
+                    android:textSize="12sp"
+                    android:textColor="@color/textDim"
+                    android:lineSpacingExtra="3dp" />
+            </LinearLayout>
+
+            <TextView
+                style="@style/SectionHeader"
+                android:layout_marginTop="22dp"
+                android:text="WHY THE APP NEEDS ROOT" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="The gateway runs on a uid-0 shell: NAT and firewall rules, the DHCP
+server, the captive portal's port redirect and the per-voucher bandwidth caps are all
+root commands. With root confirmed the app can start; without it, every step after
+this one would fail silently - which is exactly the 'it did nothing' bug class this
+app used to ship with."
+                android:textSize="12sp"
+                android:textColor="@color/textDim"
+                android:lineSpacingExtra="4dp" />
+
+            <Button
+                android:id="@+id/btn_continue"
+                style="@style/BtnPrimary"
+                android:layout_width="match_parent"
+                android:layout_marginTop="24dp"
+                android:enabled="false"
+                android:text="Continue" />
+
+            <Button
+                android:id="@+id/btn_retry"
+                style="@style/BtnOutline"
+                android:layout_width="match_parent"
+                android:layout_marginTop="8dp"
+                android:visibility="gone"
+                android:text="Check again" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:text="If anything fails later, the debugger holds the full error log -
+every command with its exit code, the watchdog findings and the last crash."
+                android:textSize="11sp"
+                android:textColor="@color/textDim"
+                android:lineSpacingExtra="3dp" />
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

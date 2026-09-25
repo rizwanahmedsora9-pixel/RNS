@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Screen 2 - the hotspot: the network customers join (name + password) and
+  how it is created (AP mode). Every id below is bound in SetupHotspotActivity.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/bg">
+
+    <!-- header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="18dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="10dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="STEP 2 OF 4"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:textColor="@color/accent"
+                android:letterSpacing="0.12" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text="Hotspot - name, password, mode"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:textColor="@color/textPrimary" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/hs_debugger"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:text="Debugger"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:textColor="@color/accent"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginStart="18dp"
+        android:layout_marginEnd="18dp"
+        android:background="@color/outline" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="18dp">
+
+            <TextView
+                style="@style/SectionHeader"
+                android:text="CUSTOMER NETWORK" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Network name (SSID)"
+                android:textSize="12sp"
+                android:textColor="@color/textDim" />
+
+            <EditText
+                android:id="@+id/hs_ssid"
+                style="@style/Input"
+                android:layout_marginTop="4dp"
+                android:hint="RNS-Hotspot"
+                android:inputType="text"
+                android:maxLength="32" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Password (WPA2, 8-63 characters)"
+                android:textSize="12sp"
+                android:textColor="@color/textDim" />
+
+            <EditText
+                android:id="@+id/hs_pass"
+                style="@style/Input"
+                android:layout_marginTop="4dp"
+                android:hint="hotspot123"
+                android:inputType="text"
+                android:maxLength="63" />
+
+            <TextView
+                android:id="@+id/hs_error"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:visibility="gone"
+                android:background="@color/redSoft"
+                android:padding="10dp"
+                android:textColor="@color/textPrimary"
+                android:textSize="12sp" />
+
+            <TextView
+                style="@style/SectionHeader"
+                android:layout_marginTop="20dp"
+                android:text="HOW THE NETWORK IS CREATED" />
+
+            <RadioGroup
+                android:id="@+id/hs_mode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <RadioButton
+                    android:id="@+id/hs_mode_auto"
+                    style="@style/ModeRadio"
+                    android:text="Automatic (recommended)" />
+
+                <RadioButton
+                    android:id="@+id/hs_mode_netshare"
+                    style="@style/ModeRadio"
+                    android:text="NetShare - WiFi Direct AP" />
+
+                <RadioButton
+                    android:id="@+id/hs_mode_localonly"
+                    style="@style/ModeRadio"
+                    android:text="Local-only hotspot API" />
+
+                <RadioButton
+                    android:id="@+id/hs_mode_system"
+                    style="@style/ModeRadio"
+                    android:text="Android hotspot only" />
+
+                <RadioButton
+                    android:id="@+id/hs_mode_rootap"
+                    style="@style/ModeRadio"
+                    android:text="Root hostapd (experimental)" />
+
+                <RadioButton
+                    android:id="@+id/hs_mode_manual"
+                    style="@style/ModeRadio"
+                    android:text="Wait for the toggle" />
+            </RadioGroup>
+
+            <TextView
+                android:id="@+id/hs_mode_info"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:textSize="12sp"
+                android:textColor="@color/textDim"
+                android:lineSpacingExtra="3dp" />
+
+            <TextView
+                style="@style/SectionHeader"
+                android:layout_marginTop="20dp"
+                android:text="ADVANCED (USUALLY LEFT BLANK)" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Blank = the app detects the internet side (WAN) and the hotspot side (LAN) automatically."
+                android:textSize="11sp"
+                android:textColor="@color/textDim"
+                android:lineSpacingExtra="2dp" />
+
+            <EditText
+                android:id="@+id/hs_wan"
+                style="@style/Input"
+                android:layout_marginTop="8dp"
+                android:hint="WAN interface (e.g. ccmni0, wlan0)"
+                android:inputType="text"
+                android:maxLength="16" />
+
+            <EditText
+                android:id="@+id/hs_lan"
+                style="@style/Input"
+                android:layout_marginTop="8dp"
+                android:hint="LAN interface (e.g. ap0, p2p0)"
+                android:inputType="text"
+                android:maxLength="16" />
+
+            <Button
+                android:id="@+id/btn_hs_detect"
+                style="@style/BtnTonal"
+                android:layout_width="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Detect from this phone" />
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- footer: back + next -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="16dp">
+
+        <Button
+            android:id="@+id/btn_hs_back"
+            style="@style/BtnOutline"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="6dp"
+            android:text="Back" />
+
+        <Button
+            android:id="@+id/btn_hs_next"
+            style="@style/BtnPrimary"
+            android:layout_width="0dp"
+            android:layout_weight="2"
+            android:layout_marginStart="6dp"
+            android:text="Next - voucher system" />
+    </LinearLayout>
+</LinearLayout>

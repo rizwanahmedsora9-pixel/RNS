@@ -324,8 +324,12 @@ class ApLauncher(private val context: Context) {
 
     /** scripts/netshare_ap.sh: ask the driver for a second interface and run hostapd. */
     private fun tryRootHostapd(ssid: String, pass: String, log: (String) -> Unit): ApHandle? {
+        // F-01: both values go double-quoted into a uid-0 shell command, so
+        // they are sanitised with the same strict rules as every other AP
+        // path - the old code left `$` and `` ` `` in the SSID, which is a
+        // command substitution the shell executes.
         val safePass = ApConfigText.sanitizePassphrase(pass)
-        val safeSsid = ssid.replace(Regex("[\"'\\\\]"), "").ifBlank { "RNS-Hotspot" }
+        val safeSsid = ApConfigText.sanitizeSsid(ssid)
         val res = try {
             RootShell.run("sh $NETSHARE start \"$safeSsid\" \"$safePass\"")
         } catch (e: Throwable) {

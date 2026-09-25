@@ -24,6 +24,7 @@ Router1 (ISP) ──> rooted Android phone  ──> Router2 ──> users
 | Path | What it is |
 | --- | --- |
 | `app/` | Android app (Kotlin, Room, NanoHTTPD, libsu). Open this folder's parent in Android Studio. |
+| `app/…/SplashActivity.kt`, `RootCheckActivity.kt`, `SetupHotspotActivity.kt`, `SetupVoucherActivity.kt`, `SetupStartActivity.kt` | The [onboarding flow](#deploy): splash → root check → hotspot mode + password → voucher system → start, one screen per step. |
 | `scripts/setup_network.sh` | **Source of truth** for NAT, captive-portal redirect, DHCP, policy routing and MAC authorisation. |
 | `scripts/bandwidth_control.sh` | **Source of truth** for per-client `tc`/HTB shaping (both directions). |
 | `scripts/netshare_ap.sh` | Root fallback AP: asks the driver for a second interface and runs `hostapd` on it — a hotspot with no toggle and no framework API. |
@@ -48,8 +49,33 @@ workflow artifact — see [CI](#continuous-integration).
 ## Deploy
 
 1. `adb install app-release.apk` (or just open the APK on the phone), then grant the app root when Magisk prompts.
-2. Launch the app. The gateway starts as a foreground service and the **Dashboard** shows live state: root, hotspot, WAN/LAN interfaces, portal, and an event log that names every command it runs - if something fails, the reason is on that screen.
-3. **The WiFi network customers join.** Settings → *Hotspot mode* picks how it is created; the
+2. **Launch the app.** It always opens on the **splash** — and if the *previous* run
+   ended with a crash, the splash shows the saved crash on screen (tap it to open the
+   error log), so "it died before it opened" is no longer an untraceable failure.
+   The crash guard is installed in `Application.onCreate` *before* anything else
+   runs, so every later failure is written to `files/logs/last_crash.txt` with the
+   120 log records before it.
+3. **First start is a four-step wizard**, one screen per step, each with its own
+   *Debugger* shortcut:
+   1. *Root check* — runs on **every** launch. The **Continue** button stays
+      disabled until a uid-0 shell is confirmed (`Shell.getShell().isRoot`); no
+      root → the screen says exactly where to fix it (Magisk → Superuser) and
+      offers a re-check.
+   2. *Hotspot* — network name + password (validated: WPA2 lengths, and never
+      `" `` $ \` because they are root-shell input — the F-01 finding) and how
+      the network is created (the six AP modes below). *Detect* fills the
+      advanced WAN/LAN fields from the phone's current state.
+   3. *Voucher system* — plan duration (1 Hour / 3 Hours / 1 Day / 7 Days),
+      down/up speed in Mbps and how many codes to generate.
+   4. *Ready* — a summary of what will run, then **START GATEWAY**: mints the
+      codes, shows them in a dialog, marks setup complete and starts the
+      gateway foreground service, then opens the dashboard.
+   Once setup is complete, later launches skip straight from the root check to
+   the dashboard; the wizard stays reachable from Settings → *Run setup wizard*.
+   The gateway is started by **that Start button** (and by the boot receiver on
+   later reboots) — never by a half-configured app on its own.
+4. The **Dashboard** shows live state: root, hotspot, WAN/LAN interfaces, portal, and an event log that names every command it runs - if something fails, the reason is on that screen.
+5. **The WiFi network customers join.** Settings → *Hotspot mode* picks how it is created; the
    phone's own WiFi stays connected the whole time, so it keeps **receiving** internet on
    `wlan0`/`ccmni` while **sending** it out on the second interface:
 
@@ -82,11 +108,11 @@ workflow artifact — see [CI](#continuous-integration).
    start now logs the proof that was accepted **and** the reason each other candidate
    was rejected, and the address this app writes itself is removed again by cleanup
    so it can never be mistaken for evidence twice.
-4. When the hotspot comes up the app **keeps the address Android already assigned** (usually `192.168.43.1`). Replacing that with `10.66.0.1` is what left phones spinning on "Obtaining IP address". DHCP offers are sent as broadcasts, because MediaTek radios drop the unicast offer and the client never finishes DHCP. If Android's own DHCP server comes back and the two would fight, the app steps aside and lets the phone hand out addresses — the sign-in page still appears either way. After installing this update, tell users to **forget the Wi-Fi network and join again once**.
-5. **Vouchers** tab: pick a preset (1 Hour / 3 Hours / 1 Day / 7 Days) or fill in plan name, duration and speeds, then *Generate*. Codes are copyable/shareable straight from the dialog; the list filters by status and each row can be expired or deleted.
-6. **Users** tab: everyone currently on the LAN (online *with* a voucher vs *waiting at the portal*), saved user profiles - a name/phone/note per device MAC, recorded automatically the first time a device is seen - and session history.
-7. **Settings** tab: hotspot mode (see above), SSID/password, WAN/LAN interface pins (blank = automatic), a *Detect* button that fills in what the phone currently has, and *Permissions* / *Debugger* shortcuts.
-8. Check the raw state any time with `su -c 'sh /data/local/tmp/setup_network.sh status'` — or `… diag` for the full dump the debugger's **Full report** is built from.
+6. When the hotspot comes up the app **keeps the address Android already assigned** (usually `192.168.43.1`). Replacing that with `10.66.0.1` is what left phones spinning on "Obtaining IP address". DHCP offers are sent as broadcasts, because MediaTek radios drop the unicast offer and the client never finishes DHCP. If Android's own DHCP server comes back and the two would fight, the app steps aside and lets the phone hand out addresses — the sign-in page still appears either way. After installing this update, tell users to **forget the Wi-Fi network and join again once**.
+7. **Vouchers** tab: pick a preset (1 Hour / 3 Hours / 1 Day / 7 Days) or fill in plan name, duration and speeds, then *Generate*. Codes are copyable/shareable straight from the dialog; the list filters by status and each row can be expired or deleted.
+8. **Users** tab: everyone currently on the LAN (online *with* a voucher vs *waiting at the portal*), saved user profiles - a name/phone/note per device MAC, recorded automatically the first time a device is seen - and session history.
+9. **Settings** tab: hotspot mode (see above), SSID/password, WAN/LAN interface pins (blank = automatic), a *Detect* button that fills in what the phone currently has, and *Permissions* / *Debugger* shortcuts.
+10. Check the raw state any time with `su -c 'sh /data/local/tmp/setup_network.sh status'` — or `… diag` for the full dump the debugger's **Full report** is built from.
 
 ### Updating the app
 
@@ -125,8 +151,9 @@ Until then the MAC rule already lets it through, so it does not go dark mid-swit
 
 ## Debugger
 
-**Dashboard → Debugger** (also Settings → *Debugger*, and the *Debugger* action on the
-ongoing notification) opens a screen whose only job is to get the text out of the phone:
+**Dashboard → Debugger** (also the *Debugger* link on the splash and on **every wizard
+screen**, Settings → *Debugger*, and the *Debugger* action on the ongoing notification)
+opens a screen whose only job is to get the text out of the phone:
 tap **Copy all** or **Share** and paste it into a chat. Nothing has to be selected by hand.
 
 What it records, continuously and in order:
@@ -200,10 +227,11 @@ rate limit on `/redeem`.
 
 _Regenerated automatically by `.github/workflows/readme.yml` — edit anything outside the markers instead._
 
-**1** open · **11** merged · **0** closed without merging · updated 2026-09-25 04:10 UTC
+**2** open · **11** merged · **0** closed without merging · updated 2026-09-25 05:13 UTC
 
 | PR | Title | Author | Branch | State | Updated |
 | --- | --- | --- | --- | --- | --- |
+[#13](https://github.com/rizwanahmedsora9-pixel/RNS/pull/13) | App that actually opens: splash → root check → settings → start, crash-proof | @arena-ai-coding-agent[bot] | `arena/01a0d6cd-rns` | 🟢 open | 2026-09-25
 [#12](https://github.com/rizwanahmedsora9-pixel/RNS/pull/12) | Audit of all 11 phases + Linux e2e test environment (+ fixes for F-20, F-21) | @arena-ai-coding-agent[bot] | `arena/01a0d3da-rns` | 🟣 merged | 2026-09-25
 [#11](https://github.com/rizwanahmedsora9-pixel/RNS/pull/11) | Hotspot: only adopt interfaces that are really beaconing + one dark console | @arena-ai-coding-agent[bot] | `arena/01a0d2cc-rns` | 🟣 merged | 2026-09-24
 [#10](https://github.com/rizwanahmedsora9-pixel/RNS/pull/10) | Hotspot: kill root-shell contention — fast start, clean stop, verified leftovers | @arena-ai-coding-agent[bot] | `arena/01a0d27b-rns` | 🟣 merged | 2026-09-24

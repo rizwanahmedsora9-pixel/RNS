@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Screen 3 - the voucher system: plan duration, speed and how many codes to
+  generate. Every id below is bound in SetupVoucherActivity.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/bg">
+
+    <!-- header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="18dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="10dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="STEP 3 OF 4"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:textColor="@color/accent"
+                android:letterSpacing="0.12" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text="Voucher system"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:textColor="@color/textPrimary" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/vz_debugger"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:text="Debugger"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:textColor="@color/accent"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginStart="18dp"
+        android:layout_marginEnd="18dp"
+        android:background="@color/outline" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="18dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@color/card"
+                android:padding="14dp"
+                android:text="Each voucher is a code a customer types on the sign-in page that pops
+when they join the network. Redeeming it binds their device to this plan for the
+duration and caps it at the plan speed. One code, one device, one session."
+                android:textSize="12sp"
+                android:textColor="@color/textDim"
+                android:lineSpacingExtra="3dp" />
+
+            <TextView
+                style="@style/SectionHeader"
+                android:layout_marginTop="20dp"
+                android:text="PLAN DURATION" />
+
+            <RadioGroup
+                android:id="@+id/vz_preset"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <RadioButton
+                    android:id="@+id/vz_preset_1h"
+                    style="@style/ModeRadio"
+                    android:text="1 Hour" />
+
+                <RadioButton
+                    android:id="@+id/vz_preset_3h"
+                    style="@style/ModeRadio"
+                    android:text="3 Hours" />
+
+                <RadioButton
+                    android:id="@+id/vz_preset_1d"
+                    style="@style/ModeRadio"
+                    android:text="1 Day" />
+
+                <RadioButton
+                    android:id="@+id/vz_preset_7d"
+                    style="@style/ModeRadio"
+                    android:text="7 Days" />
+            </RadioGroup>
+
+            <TextView
+                style="@style/SectionHeader"
+                android:layout_marginTop="20dp"
+                android:text="SPEED (MBPS)" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <EditText
+                    android:id="@+id/vz_down"
+                    style="@style/Input"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="10dp"
+                    android:hint="Download, e.g. 2"
+                    android:inputType="number"
+                    android:maxLength="3" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="/"
+                    android:textSize="16sp"
+                    android:textColor="@color/textDim" />
+
+                <EditText
+                    android:id="@+id/vz_up"
+                    style="@style/Input"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="10dp"
+                    android:hint="Upload, e.g. 1"
+                    android:inputType="number"
+                    android:maxLength="3" />
+            </LinearLayout>
+
+            <TextView
+                style="@style/SectionHeader"
+                android:layout_marginTop="20dp"
+                android:text="CODES TO GENERATE NOW" />
+
+            <EditText
+                android:id="@+id/vz_count"
+                style="@style/Input"
+                android:hint="How many codes (1-500)"
+                android:inputType="number"
+                android:maxLength="3" />
+
+            <TextView
+                android:id="@+id/vz_preview"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:background="@color/card"
+                android:padding="12dp"
+                android:fontFamily="monospace"
+                android:textColor="@color/code"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/vz_error"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:visibility="gone"
+                android:background="@color/redSoft"
+                android:padding="10dp"
+                android:textColor="@color/textPrimary"
+                android:textSize="12sp" />
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- footer: back + next -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="16dp">
+
+        <Button
+            android:id="@+id/btn_vz_back"
+            style="@style/BtnOutline"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="6dp"
+            android:text="Back" />
+
+        <Button
+            android:id="@+id/btn_vz_next"
+            style="@style/BtnPrimary"
+            android:layout_width="0dp"
+            android:layout_weight="2"
+            android:layout_marginStart="6dp"
+            android:text="Next - start" />
+    </LinearLayout>
+</LinearLayout>

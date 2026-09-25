@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Screen 4 - Ready: the summary of what Start will do, then the start button.
+  Every id below is bound in SetupStartActivity.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/bg">
+
+    <!-- header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="18dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="10dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="STEP 4 OF 4"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:textColor="@color/accent"
+                android:letterSpacing="0.12" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text="Ready to start"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:textColor="@color/textPrimary" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/st_debugger"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:text="Debugger"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:textColor="@color/accent"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginStart="18dp"
+        android:layout_marginEnd="18dp"
+        android:background="@color/outline" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="18dp">
+
+            <!-- what will be running -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_card"
+                android:padding="16dp">
+
+                <LinearLayout style="@style/StatRow">
+                    <TextView style="@style/StatLabel" android:text="Root" />
+                    <TextView
+                        style="@style/StatValue"
+                        android:textColor="@color/green"
+                        android:text="confirmed (step 1)" />
+                </LinearLayout>
+
+                <LinearLayout style="@style/StatRow">
+                    <TextView style="@style/StatLabel" android:text="Network name" />
+                    <TextView android:id="@+id/st_ssid" style="@style/StatValue" android:text="-" />
+                </LinearLayout>
+
+                <LinearLayout style="@style/StatRow">
+                    <TextView style="@style/StatLabel" android:text="Password" />
+                    <TextView android:id="@+id/st_pass" style="@style/StatValue" android:text="-" />
+                </LinearLayout>
+
+                <LinearLayout style="@style/StatRow">
+                    <TextView style="@style/StatLabel" android:text="Hotspot mode" />
+                    <TextView android:id="@+id/st_mode" style="@style/StatValue" android:text="-" />
+                </LinearLayout>
+
+                <LinearLayout style="@style/StatRow">
+                    <TextView style="@style/StatLabel" android:text="Voucher plan" />
+                    <TextView android:id="@+id/st_plan" style="@style/StatValue" android:text="-" />
+                </LinearLayout>
+
+                <LinearLayout style="@style/StatRow">
+                    <TextView style="@style/StatLabel" android:text="Codes to generate" />
+                    <TextView android:id="@+id/st_count" style="@style/StatValue" android:text="-" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- how a customer uses it -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:background="@color/accentSoft"
+                android:padding="14dp"
+                android:text="How a customer connects:\n\n1. Joins the WiFi network above\n2. The sign-in page opens automatically (captive portal)\n3. Types a voucher code\n4. Gets internet for the plan duration, capped at the plan speed\n\nUnpaid devices get an IP but no internet - the firewall drops them at the FORWARD chain."
+                android:textSize="12sp"
+                android:textColor="@color/textPrimary"
+                android:lineSpacingExtra="3dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:text="After Start, the dashboard shows the live state (AP, portal, clients).
+The Vouchers tab holds the generated codes. The debugger holds the error log -
+open it from the dashboard, from Settings, or from the notification."
+                android:textSize="11sp"
+                android:textColor="@color/textDim"
+                android:lineSpacingExtra="3dp" />
+
+            <Button
+                android:id="@+id/btn_start_gw"
+                style="@style/BtnPrimary"
+                android:layout_width="match_parent"
+                android:layout_marginTop="22dp"
+                android:text="START GATEWAY" />
+
+            <Button
+                android:id="@+id/btn_start_back"
+                style="@style/BtnOutline"
+                android:layout_width="match_parent"
+                android:layout_marginTop="8dp"
+                android:text="Back" />
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>
