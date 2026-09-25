@@ -1,0 +1,31 @@
+#!/bin/sh
+# Busybox udhcpc handler for the test client namespace.
+#
+# Deliberately does NOT write /etc/resolv.conf: `ip netns exec` does not create
+# a mount namespace, so that file is the sandbox-wide one and overwriting it
+# would change name resolution for everything else running here. DNS is
+# therefore exercised with explicit queries instead of via the resolver.
+case "$1" in
+    bound|renew)
+        ip addr flush dev "$interface" 2>/dev/null
+        ip addr add "$ip/${mask:-255.255.255.0}" dev "$interface" 2>/dev/null
+        ip link set "$interface" up 2>/dev/null
+        for r in $router; do
+            ip route replace default via "$r" dev "$interface" 2>/dev/null
+            break
+        done
+        # Expose what we were given so the harness can assert on it.
+        printf '%s %s %s %s\n' "$ip" "${mask:-}" "${router:-}" "${dns:-}" \
+            > "${RNS_E2E_STATE:-/tmp/rns-e2e/state}/client_lease.txt"
+        echo "udhcpc: $interface $ip/${mask:-24} router=${router:-none} dns=${dns:-none}"
+        ;;
+    deconfig)
+        ip addr flush dev "$interface" 2>/dev/null
+        ip route flush dev "$interface" 2>/dev/null
+        ;;
+    leasefail|nak)
+        echo "udhcpc: $1"
+        rm -f "${RNS_E2E_STATE:-/tmp/rns-e2e/state}/client_lease.txt"
+        ;;
+esac
+exit 0

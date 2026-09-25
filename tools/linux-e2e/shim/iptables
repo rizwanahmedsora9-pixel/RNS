@@ -1,0 +1,109 @@
+#!/bin/sh
+# =============================================================================
+# iptables wrapper used ONLY by the Linux end-to-end harness.
+#
+# It exists because this container's kernel ships no loadable modules:
+# /lib/modules is empty, so xt_mac and xt_owner are unavailable and every rule
+# that uses them is rejected with
+#     "Extension mac revision 0 not supported, missing kernel module?"
+# On a real rooted phone (and on any normal Linux host) both exist.
+#
+# Substitutions made here, and WHY each is safe for the test:
+#
+#   1.  -m mac --mac-source <MAC>   ->   -s <ip-of-that-MAC>
+#       The IP is resolved from the dnsmasq lease file, falling back to the
+#       dhcp-host reservation file - exactly the two sources the app's own
+#       ArpResolver / LeaseParser use to turn a client IP into a MAC. What this
+#       preserves: chain choice, insert position, jump target, idempotency
+#       (-C before -I), and the whole default-deny ordering. What it cannot
+#       verify: the kernel's MAC matcher itself. A MAC that cannot be resolved
+#       is turned into -s 255.255.255.255 (matches nothing) so the failure is
+#       loud rather than a silent pass.
+#
+#   2.  -m owner ! --uid-owner 0    ->   -s 255.255.255.255
+#       This rule blocks Android's non-root tether dnsmasq from answering on the
+#       LAN. This harness runs one dnsmasq, as root, so nothing should match -
+#       which is exactly what an unroutable source address gives us.
+#
+#       Do NOT simply drop the match: that leaves "-p udp --sport 67 -j DROP",
+#       which drops OUR OWN root dnsmasq's DHCPOFFER too and every client sticks
+#       on "Obtaining IP address". (Found the hard way - the first run of this
+#       harness did exactly that and DHCP failed with EPERM on sendmsg.)
+#
+# Every substitution is appended to $RNS_E2E_STATE/macshim.log so the test
+# report can say plainly what was changed.
+# =============================================================================
+
+REAL="${RNS_REAL_IPTABLES:-/usr/sbin/iptables}"
+STATE="${RNS_E2E_STATE:-/tmp/rns-e2e/state}"
+LEASES="$STATE/dnsmasq.leases"
+HOSTS="$STATE/dhcp_hosts"
+LOG="$STATE/macshim.log"
+
+mac_to_ip() {
+    m=$(printf '%s' "$1" | tr 'A-F' 'a-f')
+    ip=$(awk -v want="$m" 'tolower($2)==want {print $3; exit}' "$LEASES" 2>/dev/null)
+    [ -n "$ip" ] && { printf '%s' "$ip"; return 0; }
+    ip=$(awk -F, -v want="$m" 'tolower($1)==want {print $2; exit}' "$HOSTS" 2>/dev/null)
+    [ -n "$ip" ] && { printf '%s' "$ip"; return 0; }
+    # Last resort, and the app's own fallback: the kernel neighbour table.
+    ip=$(ip neigh show 2>/dev/null \
+        | awk -v want="$m" 'tolower($5)==want {gsub(/,$/,"",$1); print $1; exit}')
+    [ -n "$ip" ] && { printf '%s' "$ip"; return 0; }
+    return 1
+}
+
+note() { printf '%s %s\n' "$(date +%H:%M:%S 2>/dev/null)" "$*" >> "$LOG" 2>/dev/null; }
+
+out=""
+while [ $# -gt 0 ]; do
+    a="$1"
+    shift
+    case "$a" in
+        -m)
+            mod="$1"
+            shift
+            case "$mod" in
+                mac)
+                    if [ "$1" = "--mac-source" ]; then
+                        shift
+                        src="$1"
+                        shift
+                        if ip=$(mac_to_ip "$src"); then
+                            out="$out -s $ip"
+                            note "TRANSLATED  -m mac --mac-source $src  ->  -s $ip"
+                        else
+                            out="$out -s 255.255.255.255"
+                            note "UNRESOLVED  -m mac --mac-source $src  ->  -s 255.255.255.255 (matches nothing)"
+                        fi
+                    else
+                        out="$out -m mac"
+                    fi
+                    ;;
+                owner)
+                    # consume the module's arguments: optional '!' plus --uid-owner N
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            '!')                     shift ;;
+                            --uid-owner|--gid-owner) shift 2 ;;
+                            *)                       break ;;
+                        esac
+                    done
+                    # Never matches: there is no non-root dnsmasq in this
+                    # harness, so "block non-root DHCP replies" blocks nothing.
+                    out="$out -s 255.255.255.255"
+                    note "TRANSLATED  -m owner ! --uid-owner 0  ->  -s 255.255.255.255 (never matches; our dnsmasq runs as root)"
+                    ;;
+                *)
+                    out="$out -m $mod"
+                    ;;
+            esac
+            ;;
+        *)
+            out="$out $a"
+            ;;
+    esac
+done
+
+# shellcheck disable=SC2086
+exec "$REAL" $out
