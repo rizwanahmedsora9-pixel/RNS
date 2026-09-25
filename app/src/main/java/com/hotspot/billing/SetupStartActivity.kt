@@ -168,7 +168,7 @@ class SetupStartActivity : AppCompatActivity() {
 
     private fun showCodes(codes: List<String>) {
         val sample = codes.take(10).joinToString("\n")
-        codesDialog = AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle("Your first voucher codes")
             .setMessage(
                 "$sample" +
@@ -178,6 +178,13 @@ class SetupStartActivity : AppCompatActivity() {
             .setPositiveButton("Open dashboard") { _, _ -> goDashboard() }
             .setCancelable(true)
             .show()
+        // Tapping outside just closes the dialog: make Start usable again
+        // instead of leaving the button stuck on "Starting...".
+        dialog.setOnDismissListener {
+            btnStart.isEnabled = true
+            btnStart.text = "SAVE & RESTART GATEWAY"
+        }
+        codesDialog = dialog
     }
 
     private fun openDebugger() {
