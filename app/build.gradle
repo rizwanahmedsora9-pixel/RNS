@@ -45,6 +45,10 @@ android {
         // way (uid 0), so it must not land in classes2.dex.
         multiDexEnabled true
         multiDexKeepFile file('src/main/multidex-config.txt')
+
+        // The emulator E2E suite (androidTest) drives the real APK: wizard,
+        // gateway start, captive portal and the voucher lifecycle.
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -136,4 +140,12 @@ dependencies {
     implementation 'androidx.work:work-runtime-ktx:2.9.0'
 
     testImplementation 'junit:junit:4.13.2'
+
+    // Emulator end-to-end tests: the real APK on a real (virtual) device.
+    // androidx.test versions are the stable set for AGP 8.2 / compileSdk 34.
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test:runner:1.5.2'
+    androidTestImplementation 'androidx.test:rules:1.5.2'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+    androidTestImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
 }

@@ -30,6 +30,7 @@ import com.hotspot.billing.db.UserSession
 import com.hotspot.billing.db.Voucher
 import com.hotspot.billing.db.VoucherStatus
 import com.hotspot.billing.debug.AppLog
+import com.hotspot.billing.debug.CrashGuard
 import com.hotspot.billing.debug.DebugExport
 import com.hotspot.billing.debug.LogFormat
 import com.hotspot.billing.net.ApMode
@@ -57,7 +58,7 @@ import kotlinx.coroutines.withContext
  */
 class MainActivity : AppCompatActivity() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main + CrashGuard.handler())
     private val db by lazy { AppDatabase.get(this) }
     private val voucherManager by lazy { VoucherManager(db) }
     private val prefs by lazy { getSharedPreferences(HotspotService.PREFS, Context.MODE_PRIVATE) }
@@ -120,8 +121,17 @@ class MainActivity : AppCompatActivity() {
         override fun run() {
             if (isFinishing || isDestroyed) return
             pollCount++
-            renderDashboard()
-            refreshData(heavy = pollCount % 2 == 0)
+            // This runs on the MAIN thread every 1.5 s for as long as the
+            // dashboard is open. An exception here kills the process - and the
+            // user sees "the app crashed" at the exact moment the hotspot is
+            // coming up. So the refresh is wrapped: a broken section is logged
+            // and the dashboard keeps polling.
+            try {
+                renderDashboard()
+                refreshData(heavy = pollCount % 2 == 0)
+            } catch (e: Throwable) {
+                AppLog.e(AppLog.TAG_UI, "main: the dashboard refresh failed", e)
+            }
             handler.postDelayed(this, 1500)
         }
     }
@@ -140,14 +150,35 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+        try {
+            setContentView(R.layout.activity_main)
+        } catch (e: Throwable) {
+            // A layout that cannot be inflated must not take the process down:
+            // the splash and the debugger still work, and the reason is saved.
+            AppLog.e(AppLog.TAG_UI, "main: the dashboard layout failed", e)
+            Toast.makeText(
+                this,
+                "The dashboard could not be drawn - the reason is in the debugger (error log).",
+                Toast.LENGTH_LONG
+            ).show()
+            finish()
+            return
+        }
 
-        wireTabs()
-        wireDashboard()
-        wireVouchers()
-        wireUsers()
-        wireSettings()
-        loadSettingsIntoFields()
+        try {
+            wireTabs()
+            wireDashboard()
+            wireVouchers()
+            wireUsers()
+            wireSettings()
+            loadSettingsIntoFields()
+        } catch (e: Throwable) {
+            // One broken section must not kill the app: the rest of the
+            // dashboard still renders and the reason is in the debugger.
+            AppLog.e(AppLog.TAG_UI, "main: a dashboard section failed to initialise", e)
+            toast("Part of the dashboard failed to load - the reason is in the debugger.")
+        }
+
         requestNotificationPermissionIfNeeded()
         if (!hasWifiSharePermissions()) requestWifiSharePermissions()
 

@@ -53,6 +53,7 @@ import com.hotspot.billing.net.VoucherManager
 import com.hotspot.billing.portal.CaptivePortalServer
 import com.hotspot.billing.util.RootShell
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -155,35 +156,110 @@ class HotspotService : android.app.Service() {
 
     // ---------------------------------------------------------------- lifecycle
 
+    /**
+     * Non-null when a component could not be built. The service still comes up
+     * (and stays in the foreground) - it just refuses to run the gateway and
+     * says so on the dashboard instead of throwing later inside a coroutine,
+     * which is what "the app crashed when I pressed Start, before the hotspot
+     * ever appeared" was.
+     */
+    private var initError: String? = null
+
     override fun onCreate() {
         super.onCreate()
+
+        // The recorder and the crash guard first: from here on nothing can die
+        // without leaving a readable error log behind.
         AppLog.init(this)
         CrashGuard.install(this, appVersionLabel())
-        db = AppDatabase.get(this)
-        voucherManager = VoucherManager(db)
-        prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        launcher = ApLauncher(this)
-        // Init new core engine
-        networkController = NetworkController(launcher)
-        watchdogManager = WatchdogManager()
-        deviceManager = DeviceManager(db)
-        billingManager = BillingManager(db, voucherManager)
-        usageMonitor = UsageMonitor(db)
-        emergencyCleaner = EmergencyCleaner(
-            stopPortal = { portal?.stop(); portal = null },
-            releaseAp = {
-                currentApHandle?.close { log(it) }
-                currentApHandle = null
-                launcher.release { log(it) }
-                SoftApController.stopAp { log(it) }
-            },
-            log = { log(it) }
-        )
-        createChannel()
-        registerStateReceivers()
-        startInForeground()
+
+        // The foreground contract comes next and is wrapped: a service started
+        // with startForegroundService() that never reaches startForeground() is
+        // killed by the system, and anything thrown before it would take the
+        // whole process down on the MAIN thread - the user sees the app die the
+        // moment Start is tapped, before any hotspot signal.
+        try {
+            createChannel()
+        } catch (e: Throwable) {
+            AppLog.e(AppLog.TAG_SERVICE, "could not create the notification channel: ${e.javaClass.simpleName}: ${e.message}", e)
+        }
+        try {
+            startInForeground()
+        } catch (e: Throwable) {
+            AppLog.e(AppLog.TAG_SERVICE, "could not start in the foreground: ${e.javaClass.simpleName}: ${e.message}", e)
+        }
+
+        // Every component is best-effort: a failure is remembered in [initError]
+        // and the gateway refuses to run with a visible reason instead of
+        // throwing later inside a coroutine (which used to leave the service
+        // stuck on "Starting..." forever).
+        initError = buildComponents()
+
+        try {
+            registerStateReceivers()
+        } catch (e: Throwable) {
+            AppLog.e(AppLog.TAG_SERVICE, "could not register the state receivers: ${e.javaClass.simpleName}: ${e.message}", e)
+        }
+
+        if (initError != null) {
+            AppLog.e(
+                AppLog.TAG_SERVICE,
+                "service created with an incomplete engine: $initError - the gateway will not run"
+            )
+            state.phase = Phase.ERROR
+            state.message =
+                "The gateway cannot start ($initError). Open the debugger for the reason, then press Start again."
+            updateNotification()
+            return
+        }
+
         log("service created (Android ${Build.VERSION.RELEASE}, API ${Build.VERSION.SDK_INT}, ${Build.MODEL})")
         log("core engine: NetworkController + WanDetector + DhcpManager + NatManager + DnsManager + FirewallManager + WatchdogManager + DeviceManager + BillingManager + UsageMonitor")
+    }
+
+    /**
+     * Builds every component the gateway needs, one at a time. Returns null when
+     * all of them came up, otherwise the name of the first one that failed (with
+     * its exception logged). Deliberately sequential and independent: a failure
+     * must never leave a half-built engine behind that a later call trips over.
+     */
+    private fun buildComponents(): String? {
+        val steps: List<Pair<String, () -> Unit>> = listOf(
+            "database" to { db = AppDatabase.get(this) },
+            "voucher manager" to { voucherManager = VoucherManager(db) },
+            "preferences" to { prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE) },
+            "AP launcher" to { launcher = ApLauncher(this) },
+            "network controller" to { networkController = NetworkController(launcher) },
+            "watchdog" to { watchdogManager = WatchdogManager() },
+            "device manager" to { deviceManager = DeviceManager(db) },
+            "billing manager" to { billingManager = BillingManager(db, voucherManager) },
+            "usage monitor" to { usageMonitor = UsageMonitor(db) },
+            "emergency cleaner" to {
+                emergencyCleaner = EmergencyCleaner(
+                    stopPortal = { portal?.stop(); portal = null },
+                    releaseAp = {
+                        currentApHandle?.close { log(it) }
+                        currentApHandle = null
+                        launcher.release { log(it) }
+                        SoftApController.stopAp { log(it) }
+                    },
+                    log = { log(it) }
+                )
+            }
+        )
+        for ((name, step) in steps) {
+            try {
+                step()
+            } catch (e: Throwable) {
+                AppLog.e(
+                    AppLog.TAG_SERVICE,
+                    "service init failed while building the $name: ${e.javaClass.simpleName}: ${e.message}",
+                    e
+                )
+                return "the $name could not start (${e.javaClass.simpleName})"
+            }
+        }
+        return null
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -220,6 +296,14 @@ class HotspotService : android.app.Service() {
     /** Start (or keep) the gateway. Safe to call repeatedly. */
     fun startSequence() {
         if (gatewayJob?.isActive == true) return
+        val problem = initError
+        if (problem != null) {
+            state.phase = Phase.ERROR
+            state.message =
+                "The gateway cannot start ($problem). Open the debugger for the reason, then press Start again."
+            updateNotification()
+            return
+        }
         gatewayJob = scope.launch { runGateway() }
     }
 
@@ -332,6 +416,13 @@ class HotspotService : android.app.Service() {
             log("AP retry requested from the UI - a gateway run is already in progress, letting it finish")
             return
         }
+        val problem = initError
+        if (problem != null) {
+            state.phase = Phase.ERROR
+            state.message = "The gateway cannot start ($problem). Open the debugger for the reason."
+            updateNotification()
+            return
+        }
         log("AP retry requested from the UI")
         gatewayJob = scope.launch { runGateway() }
     }
@@ -373,7 +464,33 @@ class HotspotService : android.app.Service() {
 
     // ---------------------------------------------------------------- gateway logic
 
+    /**
+     * The gateway run, wrapped so that NOTHING can kill it silently.
+     *
+     * Before this wrapper a throw anywhere below (a root shell that died, a
+     * framework call that was refused, a database error) ended the coroutine
+     * with the phase stuck on STARTING: the dashboard said "Starting the
+     * gateway..." forever, the hotspot never appeared, and the only trace was
+     * the crash guard's file. Now the same failure is phase ERROR with the
+     * reason on screen - and the user can press Start again.
+     */
     private suspend fun runGateway() {
+        try {
+            runGatewayInner()
+        } catch (e: CancellationException) {
+            // A cancelled job is a Stop, not a failure - let it through.
+            throw e
+        } catch (e: Throwable) {
+            AppLog.e(AppLog.TAG_SERVICE, "the gateway run failed unexpectedly", e)
+            state.phase = Phase.ERROR
+            state.message =
+                "The gateway stopped with an error: ${e.javaClass.simpleName}: ${e.message} " +
+                    "- the reason is in the debugger, press Start to try again."
+            updateNotification()
+        }
+    }
+
+    private suspend fun runGatewayInner() {
         state.reset()
         state.phase = Phase.STARTING
         state.message = "Starting..."
@@ -384,7 +501,15 @@ class HotspotService : android.app.Service() {
 
         log("deploying network scripts")
         deployScripts()
-        startLogcatWatcher()
+        try {
+            startLogcatWatcher()
+        } catch (e: Throwable) {
+            // The watcher is diagnostics only - it must never take the start down.
+            AppLog.w(
+                AppLog.TAG_SERVICE,
+                "logcat watcher failed to start: ${e.javaClass.simpleName}: ${e.message}"
+            )
+        }
 
         // "Restart app -> old sessions cleaned" (master plan TEST 7). A dnsmasq,
         // a firewall chain or a tc class left by a previous process would fight

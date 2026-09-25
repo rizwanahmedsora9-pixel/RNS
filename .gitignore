@@ -28,3 +28,10 @@ keystore.properties
 
 # --- CI scratch space ---
 .audit/
+
+# --- Emulator E2E scratch (tools/emulator-smoke.sh output, CI logs) ---
+emulator-smoke/
+e2e-diagnostics/
+gradle-e2e.log
+logcat-emulator.txt
+dumpsys-processes.txt

@@ -9,6 +9,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.hotspot.billing.db.AppDatabase
 import com.hotspot.billing.debug.AppLog
+import com.hotspot.billing.debug.CrashGuard
 import com.hotspot.billing.net.ApMode
 import com.hotspot.billing.net.VoucherManager
 import kotlinx.coroutines.CoroutineScope
@@ -30,7 +31,7 @@ import kotlinx.coroutines.withContext
  */
 class SetupStartActivity : AppCompatActivity() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main + CrashGuard.handler())
     private val prefs by lazy { SetupFlow.setupPrefs(this) }
 
     private lateinit var btnStart: Button
