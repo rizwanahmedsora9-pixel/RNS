@@ -185,11 +185,39 @@ dnsmasq_pid() {
     return 1
 }
 
-# cmdline match for a dnsmasq binary, not for a script that merely mentions it.
-is_dnsmasq_cmd() {
-    case "$1" in
-        */dnsmasq|*/dnsmasq\ *|*dnsmasq\ --*) return 0 ;;
+# Is the /proc entry at $1 a dnsmasq process?
+#
+# Decided by argv[0] or the executable, NOT the full command line. The old
+# pattern ('*/dnsmasq' matched anywhere in the cmdline) accepted any process
+# that merely mentioned the binary as an argument - e.g. a shell running
+# `bash rns-e2e.sh` with DNSMASQ_BIN=/data/local/tmp/dnsmasq on its command
+# line. keepalive() then concluded Android's tether dnsmasq had come back and
+# killed ours (clients stuck on "obtaining IP"), and start() could decide to
+# never start one at all. That is F-20 in LINUX_E2E_RESULTS.md, reproduced by
+# tools/linux-e2e/. argv[0] covers plain `dnsmasq --...` and scripts named
+# dnsmasq (the self-test's stub); the exe check covers renamed or setuid
+# binaries.
+is_dnsmasq_proc() {
+    # One fork per process scanned (the case below is free); the precise check
+    # only runs for the rare process whose command line actually mentions
+    # dnsmasq. keepalive() scans /proc every tick, so this cost matters.
+    _cmd=$(cat "$1/cmdline" 2>/dev/null) || return 1
+    case "$_cmd" in
+        *dnsmasq*) ;;
+        *) return 1 ;;
     esac
+    # The executable itself (the real binary, a renamed or setuid copy).
+    _exe=$(readlink "$1/exe" 2>/dev/null)
+    case "${_exe##*/}" in
+        dnsmasq|dnsmasq-*) return 0 ;;
+    esac
+    # ... or the program being executed: argv[0], or argv[1] when the kernel
+    # went through /usr/bin/env for a shebang (`dnsmasq --x` started from PATH,
+    # a script named dnsmasq). Matched as whole tokens, so an argument later
+    # in the command line that merely mentions the binary cannot pass.
+    tr '\0' '\n' < "$1/cmdline" 2>/dev/null | head -n 2 | awk '
+        { b = $0; sub(/.*\//, "", b); if (b == "dnsmasq" || index(b, "dnsmasq-") == 1) f = 1 }
+        END { exit f ? 0 : 1 }' && return 0
     return 1
 }
 
@@ -198,8 +226,7 @@ foreign_dnsmasq_running() {
     for proc in /proc/[0-9]*; do
         pid=${proc#/proc/}
         [ -n "$OUR_PID" ] && [ "$pid" = "$OUR_PID" ] && continue
-        cmdline=$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null) || continue
-        if is_dnsmasq_cmd "$cmdline"; then
+        if is_dnsmasq_proc "$proc"; then
             return 0
         fi
     done
@@ -216,8 +243,7 @@ save_foreign_cmdline() {
     for proc in /proc/[0-9]*; do
         pid=${proc#/proc/}
         [ -n "$OUR_PID" ] && [ "$pid" = "$OUR_PID" ] && continue
-        cmdline=$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null) || continue
-        if is_dnsmasq_cmd "$cmdline"; then
+        if is_dnsmasq_proc "$proc"; then
             cp "$proc/cmdline" "$FOREIGN_CMD" 2>/dev/null && return 0
         fi
     done
@@ -249,8 +275,7 @@ kill_foreign_dnsmasq() {
     for proc in /proc/[0-9]*; do
         pid=${proc#/proc/}
         [ -n "$OUR_PID" ] && [ "$pid" = "$OUR_PID" ] && continue
-        cmdline=$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null) || continue
-        if is_dnsmasq_cmd "$cmdline"; then
+        if is_dnsmasq_proc "$proc"; then
             if kill "$pid" 2>/dev/null; then
                 log "stopped foreign dnsmasq (pid $pid)"
                 killed=1
@@ -265,11 +290,19 @@ kill_foreign_dnsmasq() {
 # Is this dnsmasq *ours*? Ours is identified by the state paths it was started
 # with, not by the pidfile: an instance from a previous session whose pidfile was
 # already removed is still ours and still holds UDP/67.
-is_our_dnsmasq_cmd() {
-    case "$1" in
-        *"--pid-file=$PIDFILE"*|*"--dhcp-leasefile=$LEASEFILE"*|*"--dhcp-hostsfile=$HOSTS_FILE"*) return 0 ;;
+#
+# The state-path match alone is not enough - it must ALSO be a dnsmasq process
+# (see is_dnsmasq_proc): these results are used to KILL processes, and a shell
+# that merely carries one of our state paths on its command line must not die
+# for it.
+is_our_dnsmasq_proc() {
+    # The state-path test first: one fork for every process, and the full
+    # detection only for the rare process that carries our distinctive paths.
+    case "$(tr '\0' ' ' < "$1/cmdline" 2>/dev/null)" in
+        *"--pid-file=$PIDFILE"*|*"--dhcp-leasefile=$LEASEFILE"*|*"--dhcp-hostsfile=$HOSTS_FILE"*) ;;
+        *) return 1 ;;
     esac
-    return 1
+    is_dnsmasq_proc "$1"
 }
 
 # Kill EVERY dnsmasq of ours, tracked or not, and drop the pidfile.
@@ -285,8 +318,7 @@ kill_our_dnsmasq() {
     for proc in /proc/[0-9]*; do
         pid=${proc#/proc/}
         [ -n "$OUR_PID" ] && [ "$pid" = "$OUR_PID" ] && continue
-        cmdline=$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null) || continue
-        if is_our_dnsmasq_cmd "$cmdline"; then
+        if is_our_dnsmasq_proc "$proc"; then
             if kill "$pid" 2>/dev/null; then
                 log "stopped a dnsmasq left over from an earlier session (pid $pid)"
                 killed=1
@@ -302,8 +334,7 @@ kill_our_dnsmasq() {
         sleep 1
         for proc in /proc/[0-9]*; do
             pid=${proc#/proc/}
-            cmdline=$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null) || continue
-            if is_our_dnsmasq_cmd "$cmdline"; then
+            if is_our_dnsmasq_proc "$proc"; then
                 kill -9 "$pid" 2>/dev/null && log "force-killed dnsmasq pid $pid"
             fi
         done
@@ -319,8 +350,7 @@ our_dnsmasq_orphan_running() {
     for proc in /proc/[0-9]*; do
         pid=${proc#/proc/}
         [ -n "$OUR_PID" ] && [ "$pid" = "$OUR_PID" ] && continue
-        cmdline=$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null) || continue
-        if is_our_dnsmasq_cmd "$cmdline"; then
+        if is_our_dnsmasq_proc "$proc"; then
             return 0
         fi
     done
@@ -1184,16 +1214,22 @@ probe() {
         *"-A INPUT -j HS_IN"*) echo "in_jump=yes" ;;
         *) echo "in_jump=no" ;;
     esac
-    case "$NATS" in
-        *"-A POSTROUTING -o ${WAN} -s ${LAN_SUBNET} -j MASQUERADE"*|*"-o ${WAN} -s ${LAN_SUBNET} -j MASQUERADE"*)
-            echo "masq=yes" ;;
-        *) echo "masq=no" ;;
-    esac
-    case "$NATS" in
-        *"-A HS_NAT -i ${LAN_IF} -p tcp --dport 80 -j REDIRECT --to-ports ${PORTAL_PORT}"*)
-            echo "redirect=yes" ;;
-        *) echo "redirect=no" ;;
-    esac
+    # Existence checks, not text matching: iptables 1.8+ prints these rules as
+    # "-p tcp -m tcp --dport 80" (and -s before -o), so a substring match on
+    # the 1.6-era text reports masq=no / redirect=no while both rules are in
+    # place, and the watchdog re-installs them on every tick - the root-shell
+    # churn PR #10 set out to remove. F-21 in LINUX_E2E_RESULTS.md. -C is the
+    # same idiom keepalive() already uses for the redirect.
+    if [ -n "$WAN" ] && iptables -t nat -C POSTROUTING -o "$WAN" -s "$LAN_SUBNET" -j MASQUERADE 2>/dev/null; then
+        echo "masq=yes"
+    else
+        echo "masq=no"
+    fi
+    if iptables -t nat -C HS_NAT -i "$LAN_IF" -p tcp --dport 80 -j REDIRECT --to-ports "$PORTAL_PORT" 2>/dev/null; then
+        echo "redirect=yes"
+    else
+        echo "redirect=no"
+    fi
     RULES=$(ip rule show 2>/dev/null)
     case "$RULES" in
         *"iif $LAN_IF lookup main"*) echo "rule_iif=yes" ;;
@@ -1364,8 +1400,7 @@ free_dns() {
     fi
     for proc in /proc/[0-9]*; do
         pid=${proc#/proc/}
-        cmdline=$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null) || continue
-        if is_dnsmasq_cmd "$cmdline"; then
+        if is_dnsmasq_proc "$proc"; then
             if kill "$pid" 2>/dev/null; then
                 log "stopped dnsmasq pid $pid"
             fi
@@ -1383,7 +1418,7 @@ procs() {
         [ -n "$cmdline" ] || continue
         case "$cmdline" in
             *hostapd*|*wpa_supplicant*|*netshare_ap*) echo "$pid: $cmdline" ;;
-            *) if is_dnsmasq_cmd "$cmdline"; then echo "$pid: $cmdline"; fi ;;
+            *) if is_dnsmasq_proc "$proc"; then echo "$pid: $cmdline"; fi ;;
         esac
     done
 }
