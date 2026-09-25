@@ -227,11 +227,11 @@ rate limit on `/redeem`.
 
 _Regenerated automatically by `.github/workflows/readme.yml` — edit anything outside the markers instead._
 
-**2** open · **11** merged · **0** closed without merging · updated 2026-09-25 05:13 UTC
+**1** open · **12** merged · **0** closed without merging · updated 2026-09-25 05:33 UTC
 
 | PR | Title | Author | Branch | State | Updated |
 | --- | --- | --- | --- | --- | --- |
-[#13](https://github.com/rizwanahmedsora9-pixel/RNS/pull/13) | App that actually opens: splash → root check → settings → start, crash-proof | @arena-ai-coding-agent[bot] | `arena/01a0d6cd-rns` | 🟢 open | 2026-09-25
+[#13](https://github.com/rizwanahmedsora9-pixel/RNS/pull/13) | App that actually opens: splash → root check → settings → start, crash-proof | @arena-ai-coding-agent[bot] | `arena/01a0d6cd-rns` | 🟣 merged | 2026-09-25
 [#12](https://github.com/rizwanahmedsora9-pixel/RNS/pull/12) | Audit of all 11 phases + Linux e2e test environment (+ fixes for F-20, F-21) | @arena-ai-coding-agent[bot] | `arena/01a0d3da-rns` | 🟣 merged | 2026-09-25
 [#11](https://github.com/rizwanahmedsora9-pixel/RNS/pull/11) | Hotspot: only adopt interfaces that are really beaconing + one dark console | @arena-ai-coding-agent[bot] | `arena/01a0d2cc-rns` | 🟣 merged | 2026-09-24
 [#10](https://github.com/rizwanahmedsora9-pixel/RNS/pull/10) | Hotspot: kill root-shell contention — fast start, clean stop, verified leftovers | @arena-ai-coding-agent[bot] | `arena/01a0d27b-rns` | 🟣 merged | 2026-09-24
