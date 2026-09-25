@@ -129,7 +129,8 @@ class SetupVoucherActivity : AppCompatActivity() {
             .apply()
         AppLog.i(
             AppLog.TAG_UI,
-            "setup: voucher plan saved - \"${VoucherPresets.planName(preset, down, up)}\", $count codes"
+            "setup: voucher plan saved - \"${VoucherPresets.planName(preset, down ?: 2, up ?: 1)}\", " +
+                "${count ?: 0} codes"
         )
 
         startActivity(Intent(this, SetupStartActivity::class.java))

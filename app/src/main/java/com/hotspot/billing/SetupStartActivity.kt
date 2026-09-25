@@ -79,7 +79,7 @@ class SetupStartActivity : AppCompatActivity() {
         val up = prefs.getString(SetupFlow.PREF_PLAN_UP_MB, "1")
         val count = prefs.getString(SetupFlow.PREF_PLAN_COUNT, "20")
         findViewById<TextView>(R.id.st_plan).text =
-            VoucherPresets.planName(preset, down.toIntOrNull() ?: 2, up.toIntOrNull() ?: 1)
+            VoucherPresets.planName(preset, down?.toIntOrNull() ?: 2, up?.toIntOrNull() ?: 1)
         findViewById<TextView>(R.id.st_count).text = count
     }
 
@@ -156,9 +156,9 @@ class SetupStartActivity : AppCompatActivity() {
         val db = AppDatabase.get(applicationContext)
         val manager = VoucherManager(db)
         val preset = VoucherPresets.from(prefs.getString(SetupFlow.PREF_PLAN_PRESET, null))
-        val downKbit = (prefs.getString(SetupFlow.PREF_PLAN_DOWN_MB, "2").toIntOrNull() ?: 2) * 1000
-        val upKbit = (prefs.getString(SetupFlow.PREF_PLAN_UP_MB, "1").toIntOrNull() ?: 1) * 1000
-        val count = prefs.getString(SetupFlow.PREF_PLAN_COUNT, "20").toIntOrNull() ?: 20
+        val downKbit = (prefs.getString(SetupFlow.PREF_PLAN_DOWN_MB, "2")?.toIntOrNull() ?: 2) * 1000
+        val upKbit = (prefs.getString(SetupFlow.PREF_PLAN_UP_MB, "1")?.toIntOrNull() ?: 1) * 1000
+        val count = prefs.getString(SetupFlow.PREF_PLAN_COUNT, "20")?.toIntOrNull() ?: 20
         val name = VoucherPresets.planName(preset, downKbit / 1000, upKbit / 1000)
         manager.generateBatch(count, name, preset.minutes, downKbit, upKbit)
     } catch (e: Throwable) {
