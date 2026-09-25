@@ -17,6 +17,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.hotspot.billing.debug.AppLog
+import com.hotspot.billing.debug.CrashGuard
 import com.hotspot.billing.debug.DebugExport
 import com.hotspot.billing.debug.Finding
 import com.hotspot.billing.debug.LogFormat
@@ -40,7 +41,7 @@ import java.io.File
  */
 class DebugActivity : AppCompatActivity() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main + CrashGuard.handler())
     private val handler = Handler(Looper.getMainLooper())
 
     private var svc: HotspotService? = null

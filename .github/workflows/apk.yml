@@ -215,7 +215,6 @@ jobs:
             const marker = '<!-- apk-build-result -->';
             const ok = '${{ job.status }}' === 'success';
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-
             let tail = '';
             let errors = '';
             if (!ok) {
@@ -261,6 +260,279 @@ jobs:
             });
             const existing = comments.find((c) => (c.body || '').includes(marker));
             const payload = { owner: context.repo.owner, repo: context.repo.repo, body };
+            if (existing) {
+              await github.rest.issues.updateComment({ ...payload, comment_id: existing.id });
+            } else {
+              await github.rest.issues.createComment({ ...payload, issue_number: context.issue.number });
+            }
+
+  # ---------------------------------------------------------------------------
+  # Emulator end-to-end: the APK is not "built" until it RUNS.
+  #
+  # The failure this job exists for: "the last built APK crashed before the
+  # hotspot signal ever appeared". Unit tests and a successful assembleDebug
+  # say nothing about that. Here the freshly built APKs are installed on a real
+  # (virtual) Android device and exercised:
+  #
+  #   1. connectedDebugAndroidTest - the androidTest suite drives the real app:
+  #      splash -> root check -> hotspot -> vouchers -> START GATEWAY ->
+  #      dashboard, the gateway service reaching a definite phase instead of
+  #      dying, the captive portal answering the OS probe over real HTTP, and
+  #      the voucher lifecycle (apply -> save -> kick -> appoint a new one).
+  #   2. tools/emulator-smoke.sh - the RELEASE APK (what a user installs) on a
+  #      fresh device: install, launch, stay alive. If it dies, the app's own
+  #      crash report (files/logs/last_crash.txt) is pulled and printed, so CI
+  #      says WHERE it crashed.
+  #
+  # Everything - Gradle output, the HTML/XML test reports, logcat, the pulled
+  # crash reports - is uploaded even when the job fails.
+  # ---------------------------------------------------------------------------
+  emulator-e2e:
+    name: Emulator E2E (APK smoke + billing flow)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: build
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Locate Android SDK
+        run: |
+          set -Eeuo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          if command -v sdkmanager > /dev/null 2>&1; then
+            SM="$(command -v sdkmanager)"
+          elif [ -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SM="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          else
+            echo "::error::no sdkmanager found"
+            exit 1
+          fi
+          echo "SDKMANAGER_BIN=$SM" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+
+      - name: Install the platform, build tools and an emulator system image
+        run: |
+          set -euo pipefail
+          yes | "$SDKMANAGER_BIN" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER_BIN" --install \
+            "platforms;android-${ANDROID_PLATFORM}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}" \
+            "platform-tools" \
+            "emulator" \
+            "system-images;android-${ANDROID_PLATFORM};default;x86_64"
+
+      - name: Set up Gradle build cache
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Build the app, the release APK and the instrumentation test APK
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --console=plain --stacktrace \
+            assembleDebug assembleRelease assembleDebugAndroidTest \
+            -PappVersionCode="${GITHUB_RUN_NUMBER}" \
+            -PappVersionName="1.0.${GITHUB_RUN_NUMBER}+${GITHUB_SHA::7}" 2>&1 | tee -a gradle-e2e.log
+
+      # GitHub's ubuntu runners expose /dev/kvm, but the group permissions are
+      # not always permissive enough for the emulator user.
+      - name: Enable KVM for the emulator
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
+      - name: Run the end-to-end suite and the APK smoke test on the emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ env.ANDROID_PLATFORM }}
+          target: default
+          arch: x86_64
+          profile: pixel
+          ram-size: 2048M
+          disk-size: 4096M
+          disable-animations: true
+          disable-spellchecker: true
+          emulator-boot-timeout: 900
+          emulator-options: -no-snapshot-save -no-snapshot-load -camera-back none
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+        script: |
+          # No `set -e`: every step below must run so the evidence is complete,
+          # and the failures are collected in `status`.
+          set -u
+          status=0
+
+          echo "::group::Install the app and the instrumentation test APK"
+          adb install -r app/build/outputs/apk/debug/app-debug.apk || status=1
+          adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk || status=1
+          echo "::endgroup::"
+
+          echo "::group::End-to-end suite (wizard, gateway start, portal, vouchers)"
+          if ./gradlew --no-daemon --console=plain connectedDebugAndroidTest >gradle-e2e.log 2>&1; then
+            echo "connectedDebugAndroidTest passed"
+          else
+            status=1
+            echo "::error::connectedDebugAndroidTest failed - see the e2e-diagnostics artifact"
+          fi
+          tail -n 200 gradle-e2e.log
+          echo "::endgroup::"
+
+          # The release APK - the one a user installs - on a clean device.
+          echo "::group::Release APK smoke test (install, launch, stay alive)"
+          adb uninstall com.hotspot.billing >/dev/null 2>&1 || true
+          bash tools/emulator-smoke.sh app/build/outputs/apk/release/app-release.apk || status=1
+          echo "::endgroup::"
+
+          # Always keep the device-side evidence for the diagnostics artifact.
+          adb logcat -d > logcat-emulator.txt 2>/dev/null || true
+          adb shell dumpsys activity processes > dumpsys-processes.txt 2>/dev/null || true
+          exit $status
+
+      - name: Collect the end-to-end evidence
+        if: always()
+        run: |
+          set +e
+          mkdir -p e2e-diagnostics
+          cp -f gradle-e2e.log e2e-diagnostics/ 2>/dev/null || true
+          cp -f logcat-emulator.txt e2e-diagnostics/ 2>/dev/null || true
+          cp -f dumpsys-processes.txt e2e-diagnostics/ 2>/dev/null || true
+          cp -rf emulator-smoke e2e-diagnostics/ 2>/dev/null || true
+          find app/build/outputs/androidTest-results app/build/reports/androidTests \
+            -type f -print 2>/dev/null | while read -r f; do
+              mkdir -p "e2e-diagnostics/$(dirname "$f" | sed 's#^app/build/##')"
+              cp -f "$f" "e2e-diagnostics/$(dirname "$f" | sed 's#^app/build/##')/" 2>/dev/null || true
+            done
+          {
+            echo '=== emulator E2E failure summary ==='
+            grep -RInE 'FAILED|tests? failed|AssertionError|Exception|CRASH' \
+              e2e-diagnostics app/build/outputs/androidTest-results 2>/dev/null | tail -100 || true
+          } > e2e-diagnostics/failure-summary.txt
+
+      - name: Upload the end-to-end diagnostics
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: e2e-diagnostics-${{ github.run_number }}
+          path: e2e-diagnostics/**
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Surface end-to-end failures as annotations
+        if: failure()
+        run: |
+          set +e
+          echo "::error::Emulator E2E failed - the APK does not survive real use (see the e2e-diagnostics artifact)"
+          if [ -s emulator-smoke/last_crash.txt ]; then
+            grep -E 'exception|at com.hotspot|where|device' emulator-smoke/last_crash.txt | head -12 \
+              | while IFS= read -r line; do echo "::error::${line}"; done
+          fi
+          for f in app/build/outputs/androidTest-results/connected/*.xml; do
+            [ -f "$f" ] || continue
+            grep -oE 'tests="[0-9]+" failures="[0-9]+" errors="[0-9]+"' "$f" | head -1 \
+              | while IFS= read -r line; do echo "::error::$(basename "$f"): ${line}"; done
+          done
+
+      # The whole point of the job is to tell the user what happened on a real
+      # device, so the result is posted back on the pull request (updated in
+      # place on re-runs, like the build result comment).
+      - name: Post the end-to-end result on the pull request
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- apk-e2e-result -->';
+            const ok = '${{ job.status }}' === 'success';
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const artifact = `e2e-diagnostics-${context.runNumber}`;
+
+            // Per-test counts from the JUnit XML the runner produces.
+            const rows = [];
+            let tests = 0, bad = 0, skipped = 0;
+            const dir = 'app/build/outputs/androidTest-results/connected';
+            let files = [];
+            try {
+              files = fs.readdirSync(dir).filter((f) => f.endsWith('.xml'));
+            } catch (e) { files = []; }
+            for (const f of files) {
+              const xml = fs.readFileSync(`${dir}/${f}`, 'utf8');
+              const head = (/<testsuite[^>]*>/.exec(xml) || [''])[0];
+              const n = (name) => {
+                const m = new RegExp(`${name}="(\\d+)"`).exec(head);
+                return m ? parseInt(m[1], 10) : 0;
+              };
+              const suite = (/name="([^"]+)"/.exec(head) || [null, f])[1];
+              tests += n('tests');
+              bad += n('failures') + n('errors');
+              skipped += n('skipped');
+              rows.push(`| ${suite} | ${n('tests')} | ${n('failures') + n('errors')} | ${n('skipped')} |`);
+            }
+
+            // The release-APK smoke test writes its own one-line verdict.
+            let smoke = 'not run';
+            let smokeWhy = '';
+            try {
+              const s = fs.readFileSync('emulator-smoke/summary.txt', 'utf8').trim();
+              const get = (k) => ((new RegExp(`${k}=(.*)`)).exec(s) || [null, ''])[1].trim();
+              smoke = get('RESULT') === 'PASS' ? 'passed' : 'failed';
+              smokeWhy = get('REASON');
+              if (get('ROOT') === 'no') {
+                smoke += ' (device has no root shell - reported, not hidden)';
+              }
+            } catch (e) { smoke = 'see the log'; }
+
+            const body = [
+              marker,
+              `### APK on the emulator ${ok ? '✅ passed' : '❌ failed'}`,
+              '',
+              '| | |',
+              '|---|---|',
+              `| Commit | \`${context.sha.slice(0, 7)}\` |`,
+              '| Device | Android 14 (API 34), x86_64 emulator |',
+              `| Release APK | ${smoke}${smokeWhy && !ok ? ' — ' + smokeWhy : ''} |`,
+              `| End-to-end tests | ${tests ? `${tests} run, ${bad} failed, ${skipped} skipped` : 'see the artifact'} |`,
+              `| Evidence | \`${artifact}\` artifact |`,
+              `| Full log | [Actions run #${context.runNumber}](${runUrl}) |`,
+              '',
+              'The suite drives the real APK: the setup wizard through to the dashboard, the gateway service reaching a definite phase instead of dying, the captive portal answering the OS probe over real HTTP, and the voucher lifecycle (apply → save → kick → appoint a new voucher).',
+            ];
+            if (rows.length) {
+              body.push('', '| Suite | Tests | Failed | Skipped |', '|---|---|---|---|', ...rows);
+            }
+            if (!ok) {
+              body.push(
+                '',
+                'What failed is in the `' + artifact + '` artifact: the Gradle output, the HTML test reports, logcat and the app\'s own crash report (`last_crash.txt`).'
+              );
+            }
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find((c) => (c.body || '').includes(marker));
+            const payload = { owner: context.repo.owner, repo: context.repo.repo, body: body.join('\n') };
             if (existing) {
               await github.rest.issues.updateComment({ ...payload, comment_id: existing.id });
             } else {

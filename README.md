@@ -31,6 +31,8 @@ Router1 (ISP) ──> rooted Android phone  ──> Router2 ──> users
 | `app/…/debug/` | The recorder behind the [debugger](#debugger): ring buffer + file log, crash guard, logcat mirror, health findings (`H1`–`H10`), the full diagnostic report. |
 | `app/…/net/ApMode.kt`, `ApLauncher.kt`, `WifiShareAp.kt` | How the customer-facing WiFi network gets created: system hotspot, local-only hotspot, WiFi Direct group (NetShare-style), root `hostapd`, or manual. |
 | `tools/run-script-selftest.sh` | Runs those scripts against stub kernel commands and asserts the resulting ruleset. |
+| `tools/emulator-smoke.sh` | Installs the built APK on a device/emulator, launches it and proves it stays alive — with the app's own crash report pulled and printed when it does not. |
+| `app/src/androidTest/` | The [end-to-end suite](#end-to-end-tests): wizard, gateway start, captive portal and the voucher lifecycle, run against the real APK on a real device. |
 | `.github/workflows/` | APK build, README refresh, branch cleanup. |
 | `app/src/main/assets/*.sh` | **Generated** from `scripts/` by `:app:syncShellScripts`; git-ignored, never edited. |
 | `Hotspot .txt` | Terminal capture from the device that the design is based on. |
@@ -40,6 +42,7 @@ Router1 (ISP) ──> rooted Android phone  ──> Router2 ──> users
 ```bash
 ./gradlew assembleDebug          # app/build/outputs/apk/debug/app-debug.apk
 ./gradlew test                   # unit tests
+./gradlew connectedDebugAndroidTest   # end-to-end tests (needs a device/emulator)
 bash tools/run-script-selftest.sh  # shell layer, no phone needed
 ```
 
@@ -181,6 +184,7 @@ dying), rate-limited at 300 lines/s with the dropped count *recorded* rather tha
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
 | [`apk.yml`](.github/workflows/apk.yml) | every PR, every push to `main`, manual | Shell self-test → unit tests → lint → `assembleDebug` + `assembleRelease`, uploads the APK as an artifact and posts the download link back on the PR. |
+| `apk.yml` → *Emulator E2E* | same, after the build | Installs the freshly built APKs on an Android emulator and **runs them**: the [end-to-end suite](#end-to-end-tests) (wizard, gateway start, portal, voucher lifecycle) plus a [smoke test](#apk-smoke-test) of the release APK. A build that installs but crashes on launch fails here, with the app's own crash report attached. |
 | [`readme.yml`](.github/workflows/readme.yml) | PR opened / updated / closed, push to `main` | Rewrites the *Pull requests* section below from the live PR list. Only touches the generated markers; ignores `README.md` changes and commits with `[skip ci]`, so it cannot loop. |
 | [`branch-cleanup.yml`](.github/workflows/branch-cleanup.yml) | every push to `main` (i.e. after a merge), every 6 h, manual | Deletes every remote branch except `main` / the default branch / anything in the `KEEP_BRANCHES` repo variable / the branch that triggered a manual run, enables GitHub's own *delete head branch on merge*, then reconciles the checkout with `origin` and reports what is left. |
 
@@ -194,6 +198,42 @@ extra branches from the sweep, and a `REPO_ADMIN_TOKEN` secret (fine-grained PAT
 head branches* setting — without it, tick that box once under Settings → General → Pull
 Requests, or just let the prune job do the work.
 
+## End-to-end tests
+
+The APK is not "built" until it **runs**. The `Emulator E2E` job installs the freshly built
+APKs on an Android emulator and drives the real app — nothing is mocked, because the point
+is to catch what a user on a phone would hit:
+
+| Suite (`app/src/androidTest/`) | What it proves |
+| --- | --- |
+| `WizardFlowTest` | splash → root check → hotspot → vouchers → **START GATEWAY** → dashboard: the whole onboarding runs without crashing. A crash on any of these screens — the "the app died before the hotspot ever appeared" failure — is a red job with a stack trace. |
+| `GatewayStartSmokeTest` | the dashboard's start keeps the service alive and reaches a definite phase. On a device with no radio (an emulator) the correct end state is **WAITING_AP** — "switch the hotspot on and we take over" — which is exactly what replaces the old crash. |
+| `PortalEndToEndTest` | **user connectivity**: the captive portal answers the OS probe URLs (`generate_204`, `ncsi.txt`, `hotspot-detect.html`, `success.html`) with HTTP 200 + the sign-in page over real HTTP — that is what makes the phone pop the "sign in to network" sheet — and a submission that cannot work comes back as a page, not a dropped connection. |
+| `VoucherLifecycleTest` | **apply → save → kick → appoint a new voucher**: a redeemed code binds to the device's MAC and saves its session, the same device can reconnect but nobody else can use the code, the operator's kick (the Users tab's kick button → `forceExpire`) closes the rules and the sessions, and a freshly generated voucher gets the device back online. Plus the expiry sweep and the "network is full" path. |
+
+Run them against any connected device or emulator:
+
+```bash
+./gradlew connectedDebugAndroidTest
+```
+
+The emulator images are `userdebug`, so `su` exists and the app's root check passes — that is
+what lets the deep walk-through run. Without a root shell the app stops on the root check
+screen by design, and the tests say so instead of failing.
+
+## APK smoke test
+
+`tools/emulator-smoke.sh [apk]` is the "does it actually run" check for the built **release**
+APK on a device: install, launch on the splash, wait, and confirm the process is still alive.
+If it died, the script pulls the app's own crash report (`files/logs/last_crash.txt` — the
+crash guard writes every uncaught exception there with the 120 log records before it),
+`applog.txt` and logcat, and fails with the reason. A crash that was caught and recorded is
+reported too, so the next user never meets it as a surprise.
+
+```bash
+bash tools/emulator-smoke.sh app/build/outputs/apk/release/app-release.apk
+```
+
 ## Status
 
 Working: voucher generation and management from the admin UI, voucher redemption,
@@ -202,8 +242,9 @@ captive-portal probes for Android/iOS/Windows, foreground service that survives 
 app being swiped away, auto-restart after reboot, expiry sweep, user profiles
 auto-recorded per device MAC, a watchdog that reports and repairs drift (findings
 `H1`–`H10`), evidence-based hotspot adoption (an interface is never adopted unless
-something is really beaconing on it), and a [debugger](#debugger) that records every
-command, callback and finding as copyable text.
+something is really beaconing on it), a start that reports *why* it failed on the
+dashboard instead of dying before the hotspot appears, and a [debugger](#debugger)
+that records every command, callback and finding as copyable text.
 
 The admin screen is a single dark console: a status hero with a live dot and the
 Start/Stop actions, cards for gateway / join / interfaces, a 30-line event log (the

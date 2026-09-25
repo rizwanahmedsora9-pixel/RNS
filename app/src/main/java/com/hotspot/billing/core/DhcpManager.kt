@@ -82,12 +82,28 @@ object DhcpManager {
             AppLog.i(AppLog.TAG_NET, "dhcp: Android dnsmasq is up - leaving it (killing it tears the softap down)")
         }
 
-        val result = RootShell.startNetwork(leaveAndroidDhcp)
-        if (!result.isSuccess) {
-            AppLog.e(AppLog.TAG_NET, "dhcp: setup_network.sh start failed exit=${result.code}")
+        val result = try {
+            RootShell.startNetwork(leaveAndroidDhcp)
+        } catch (e: Throwable) {
+            // The root shell itself failed (died, refused, busy past its
+            // deadline). That is a start failure, not a crash.
+            AppLog.e(
+                AppLog.TAG_NET,
+                "dhcp: setup_network.sh start threw ${e.javaClass.simpleName}: ${e.message}",
+                e
+            )
+            null
+        }
+        if (result == null || !result.isSuccess) {
+            AppLog.e(AppLog.TAG_NET, "dhcp: setup_network.sh start failed exit=${result?.code ?: "threw"}")
             // Try keepalive as repair
-            val keepalive = RootShell.keepaliveNetwork()
-            if (!keepalive.isSuccess) {
+            val keepalive = try {
+                RootShell.keepaliveNetwork()
+            } catch (e: Throwable) {
+                AppLog.e(AppLog.TAG_NET, "dhcp: keepalive threw ${e.javaClass.simpleName}: ${e.message}", e)
+                null
+            }
+            if (keepalive?.isSuccess != true) {
                 AppLog.e(AppLog.TAG_NET, "dhcp: keepalive also failed")
                 return false
             }
@@ -137,8 +153,12 @@ object DhcpManager {
 
     fun stop(): Boolean {
         AppLog.i(AppLog.TAG_NET, "dhcp: stopping")
-        val result = RootShell.stopNetwork()
-        return result.isSuccess
+        return try {
+            RootShell.stopNetwork().isSuccess
+        } catch (e: Throwable) {
+            AppLog.e(AppLog.TAG_NET, "dhcp: stop threw ${e.javaClass.simpleName}: ${e.message}", e)
+            false
+        }
     }
 
     fun isAlive(): Boolean {
@@ -167,8 +187,13 @@ object DhcpManager {
         AppLog.i(AppLog.TAG_NET, "dhcp: restarting on $lanIf (granular heal)")
         // Granular restart: only DHCP, not whole gateway
         // setup_network.sh keepalive re-asserts DHCP without flushing address
-        val keepalive = RootShell.keepaliveNetwork()
-        if (keepalive.isSuccess && isAlive()) {
+        val keepalive = try {
+            RootShell.keepaliveNetwork()
+        } catch (e: Throwable) {
+            AppLog.e(AppLog.TAG_NET, "dhcp: keepalive threw ${e.javaClass.simpleName}: ${e.message}", e)
+            null
+        }
+        if (keepalive?.isSuccess == true && isAlive()) {
             AppLog.i(AppLog.TAG_NET, "dhcp: keepalive repaired DHCP")
             return true
         }

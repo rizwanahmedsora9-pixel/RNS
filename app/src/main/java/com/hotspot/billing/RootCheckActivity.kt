@@ -9,6 +9,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.hotspot.billing.debug.AppLog
+import com.hotspot.billing.debug.CrashGuard
 import com.hotspot.billing.util.RootShell
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,7 +31,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  */
 class RootCheckActivity : AppCompatActivity() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main + CrashGuard.handler())
 
     private lateinit var stepView: TextView
     private lateinit var titleView: TextView

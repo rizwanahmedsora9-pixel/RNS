@@ -7,6 +7,7 @@ import com.hotspot.billing.net.ApMode
 import com.hotspot.billing.net.LanPlan
 import com.hotspot.billing.net.SoftApController
 import com.hotspot.billing.util.RootShell
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -98,7 +99,16 @@ class NetworkController(
         //    the traffic left through ccmni0 (2026-09-24, 12:37:25 vs 12:37:52):
         //    the client could redeem a voucher and still get no internet.
         val tWan = System.currentTimeMillis()
-        val wan = WanDetector.detectWan()
+        val wan = try {
+            WanDetector.detectWan()
+        } catch (e: Throwable) {
+            AppLog.e(
+                AppLog.TAG_NET,
+                "network: WAN detection threw ${e.javaClass.simpleName}: ${e.message}",
+                e
+            )
+            null
+        }
         if (wan == null) {
             val msg = "No internet source found — check mobile data or WiFi"
             log("network: FAILED WAN detection: $msg")
@@ -159,10 +169,27 @@ class NetworkController(
             log("network: Android owns DHCP on $lanIf - not replacing its dnsmasq")
         }
         val lan = lanIf
-        val (dhcpOk, natOk) = coroutineScope {
-            val dhcp = async { DhcpManager.start(lan, leaveDhcp) }
-            val nat = async { RootShell.repairNat(lan, wan.interfaceName, subnetFor(lan)) }
-            dhcp.await() to nat.await()
+        val (dhcpOk, natOk) = try {
+            coroutineScope {
+                val dhcp = async { DhcpManager.start(lan, leaveDhcp) }
+                val nat = async { RootShell.repairNat(lan, wan.interfaceName, subnetFor(lan)) }
+                dhcp.await() to nat.await()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            // A root shell that died mid-command, a refused framework call: the
+            // gateway must report it, not lose the run (and with it the phase).
+            AppLog.e(
+                AppLog.TAG_NET,
+                "network: configuring $lan threw ${e.javaClass.simpleName}: ${e.message}",
+                e
+            )
+            log("network: FAILED while configuring $lan - ${e.javaClass.simpleName}: ${e.message}")
+            return StartResult.Failed(
+                "Network setup failed: ${e.javaClass.simpleName}: ${e.message}",
+                Step.DHCP_START
+            )
         }
         if (!natOk) {
             AppLog.w(AppLog.TAG_NET, "network: forwarding repair returned false on $lan, continuing")
@@ -181,8 +208,18 @@ class NetworkController(
             )
 
         // 6. One probe verifies DHCP, DNS, NAT, the firewall and policy routing.
-        val probe = RootShell.probe(lan, fresh = true)
-        val dnsInfo = DnsManager.getInfo()
+        val probe = try {
+            RootShell.probe(lan, fresh = true)
+        } catch (e: Throwable) {
+            AppLog.w(AppLog.TAG_NET, "network: probe threw ${e.javaClass.simpleName}: ${e.message}")
+            null
+        }
+        val dnsInfo = try {
+            DnsManager.getInfo()
+        } catch (e: Throwable) {
+            AppLog.w(AppLog.TAG_NET, "network: dns info threw ${e.javaClass.simpleName}: ${e.message}")
+            null
+        }
         if (probe != null && probe.dhcpOurs == false && probe.dhcpOrphan == false && probe.dhcpForeign == false) {
             val msg = "no DHCP server is answering on $lan after start"
             log("network: FAILED DNS/DHCP: $msg")
@@ -197,7 +234,7 @@ class NetworkController(
         log(
             "network: configured in ${ms(tConfigure)} - dhcp=${DhcpManager.owner() ?: "?"} " +
                 "gateway=${dhcpConfig.gateway} range=${dhcpConfig.startIp}-${dhcpConfig.endIp} " +
-                "dns=${dnsInfo.isRunning}/${dnsInfo.foreignRunning} " +
+                "dns=${dnsInfo?.isRunning ?: "?"}/${dnsInfo?.foreignRunning ?: "?"} " +
                 "nat=${probe?.natJump} fwd=${probe?.forwardJump} masq=${probe?.masquerade} " +
                 "routing=${probe?.ruleIif}/${probe?.ruleSubnet}"
         )
@@ -205,13 +242,23 @@ class NetworkController(
         // 7. Internet test (informational: a transient failure must not stop the gateway).
         val tNet = System.currentTimeMillis()
         log("network: testing internet connectivity")
-        val internetOk = NatManager.checkInternet()
+        val internetOk = try {
+            NatManager.checkInternet()
+        } catch (e: Throwable) {
+            AppLog.w(AppLog.TAG_NET, "network: internet test threw ${e.javaClass.simpleName}: ${e.message}")
+            false
+        }
         if (!internetOk) {
             AppLog.w(AppLog.TAG_NET, "network: internet test failed, but AP is up — may be transient")
         }
         log("network: internet test ${if (internetOk) "passed" else "failed"} (${ms(tNet)})")
 
-        val plan = RootShell.readLanPlan()
+        val plan = try {
+            RootShell.readLanPlan()
+        } catch (e: Throwable) {
+            AppLog.w(AppLog.TAG_NET, "network: reading the LAN plan threw ${e.javaClass.simpleName}: ${e.message}")
+            null
+        }
         log(
             "network: START SUCCESS WAN=${wan.interfaceName} LAN=$lan " +
                 "gateway=${plan?.gateway} dhcp=${dhcpConfig.startIp}-${dhcpConfig.endIp} " +
@@ -329,7 +376,14 @@ class NetworkController(
             it.close(log)
         }
 
-        val probe = RootShell.probe(fresh = true)
+        // Advisory only: a shell that died while stopping must not turn a stop
+        // into a crash.
+        val probe = try {
+            RootShell.probe(fresh = true)
+        } catch (e: Throwable) {
+            AppLog.w(AppLog.TAG_NET, "network: stop verification threw: ${e.message}")
+            null
+        }
         if (probe != null) {
             val leftover = buildList {
                 if (probe.natJump == true) add("HS_NAT jump")

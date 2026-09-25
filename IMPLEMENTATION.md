@@ -274,6 +274,66 @@ Client connected MAC: XX:XX IP: 192.168.49.10
 
 This is already logged via AppLog + RootShell.
 
+## Phase 12 — EMULATOR END-TO-END + CRASH-PROOF START (Completed 2026-09-25)
+
+**Why:** the last built APK crashed on the phone *before the hotspot signal
+appeared*. Unit tests and a successful `assembleDebug` cannot see that, and the
+sandbox has no JDK/Android SDK/emulator - so the check has to run where a real
+(virtual) device exists: CI.
+
+### 1. Crash-proof gateway start (app changes)
+
+A failure during start must be visible on the dashboard, never a dead process:
+
+- `HotspotService.onCreate` — the foreground contract (channel + `startForeground`)
+  is satisfied FIRST and every later component is built one at a time inside
+  `buildComponents()`. A component that cannot be built is remembered in
+  `initError`: the service still comes up, refuses to run the gateway and says
+  why on the dashboard. Before, anything thrown here killed the process on the
+  main thread - "the app died when I pressed Start".
+- `runGateway()` is now a wrapper around `runGatewayInner()`: a throw anywhere
+  in the start becomes phase ERROR with the reason (and the user can press Start
+  again) instead of a coroutine that dies leaving the phase stuck on STARTING.
+  `CancellationException` is re-thrown - a cancelled job is a Stop, not a failure.
+- `NetworkController.start()` — WAN detection, the DHCP+NAT phase, the probe,
+  the DNS info, the internet test and the LAN plan read are each guarded: a root
+  shell that died or a refused framework call becomes a logged `Failed(step)`
+  result, not a lost run.
+- `DhcpManager.start/stop/restart` — every root-shell call is guarded the same
+  way (a shell failure is a start failure, not a crash).
+
+### 2. Emulator end-to-end suite (`app/src/androidTest/`, run by CI)
+
+Drives the REAL APK on a real (virtual) device - nothing mocked:
+
+| Test | What it proves |
+| --- | --- |
+| `WizardFlowTest` | splash -> root check -> hotspot -> vouchers -> START GATEWAY -> dashboard: the whole onboarding runs without crashing (the "died before the hotspot appeared" failure is a red job with a stack trace) |
+| `GatewayStartSmokeTest` | the dashboard's start keeps the service alive, reaches a definite phase (WAITING_AP on a device with no radio, RUNNING when there is one) and writes no crash report |
+| `PortalEndToEndTest` | the captive portal answers the OS probe URLs (`generate_204`, `ncsi.txt`, `hotspot-detect.html`, `success.html`) with HTTP 200 + the sign-in page over real HTTP - the "user connectivity" confirmation - and a bad voucher submission comes back as a page, not a dropped connection |
+| `VoucherLifecycleTest` | apply (redeem binds the code to the MAC and saves the session) -> the same device re-connects, nobody else can -> kick (forceExpire closes rules + sessions) -> appoint a new voucher -> plus expiry sweep and pool exhaustion |
+
+### 3. APK smoke test (`tools/emulator-smoke.sh`)
+
+Installs the built **release** APK on the emulator, launches it, waits, and
+checks the process is still alive. If it died, it pulls
+`files/logs/last_crash.txt` (the app's own crash guard), `applog.txt` and logcat
+and fails with the reason - so CI says *where* it crashed, not just "it crashed".
+
+### 4. CI (`.github/workflows/apk.yml`, job `emulator-e2e`)
+
+After the APK build: install the emulator system image, build the app + the
+instrumentation test APK, run `connectedDebugAndroidTest`, then the release-APK
+smoke test, and always upload the evidence (Gradle log, test reports, logcat,
+pulled crash reports) as the `e2e-diagnostics` artifact.
+
+Run it locally with a device attached:
+
+```bash
+./gradlew connectedDebugAndroidTest          # the E2E suite
+bash tools/emulator-smoke.sh app-release.apk # install + launch + survive
+```
+
 ## Test Plan (From Master Plan)
 
 - Test 1 Mobile data: Phone data → RNS → Laptop, expect internet works
@@ -299,6 +359,12 @@ This is already logged via AppLog + RootShell.
 - Actual STA+AP concurrency on Infinix Hot 8
 - dnsmasq binding on real ap0
 - Captive portal sheet pop
+
+**Now covered by the emulator E2E (Phase 12):** the app opening and the wizard
+running without a crash, the gateway start surviving on a device whose radio
+cannot create an AP, the portal answering the OS probes over real HTTP, and the
+full voucher lifecycle. Still hardware-bound: a real client joining a real AP,
+STA+AP concurrency on the Hot 8 and the actual dnsmasq bind on `ap0`.
 
 But debugger Full report now answers those from one paste.
 
